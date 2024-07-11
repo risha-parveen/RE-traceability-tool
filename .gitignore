@@ -1,3 +1,5 @@
 credentials.cfg
 G:
 data
+unused
+__pycache__
