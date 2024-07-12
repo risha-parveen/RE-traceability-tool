@@ -36,11 +36,39 @@ class Commit:
 
     def __str__(self):
         return str(self.to_dict())
-    
-class Issue:
-    def __init__(self) :
-        pass
+        
+class Issues:
+    def __init__(self):
+        self.issue_map = {}
 
+    def add_issue(self, number, body, createdAt, updatedAt, comments):
+        """
+        Add an Issue to the collection.
+        """
+        issue = {
+            "issue_id": number,
+            "issue_desc": body,
+            "issue_comments": comments,
+            "closed_at": updatedAt,
+            "created_at": createdAt
+        }
+        self.issue_map[number] = issue
+        return issue
+
+    def get_issue_by_number(self, issue_number):
+        """
+        Retrieve an Issue from the collection by its number.
+        """
+        return self.issue_map.get(issue_number)
+
+    def get_all_issues(self):
+        """
+        Retrieve all Issues in the collection.
+        """
+        return list(self.issue_map.values())
+
+    def __str__(self):
+        return str(list(self.issue_map.values()))
 
 class GitRepoCollector:
     CACHE_DIR = './cache'
@@ -50,6 +78,7 @@ class GitRepoCollector:
         self.download_path = download_path
         self.repo_path = repo_path
         self.output_dir = output_dir
+        self.issues_collection = Issues()
 
     def clone_project(self):
         repo_url = "https://github.com/{}.git".format(self.repo_path)
@@ -126,8 +155,7 @@ class GitRepoCollector:
                 json={"query": GITHUB_GRAPHQL_QUERY, "variables": variables}
             )
             if response.status_code == 200:
-                result = response.json()
-                return result
+                return response.json()
 
         except requests.exceptions.RequestException as e:
             print(f"Error making GraphQL request: {e}")
@@ -185,15 +213,32 @@ class GitRepoCollector:
                 print("GraphQL request failed, stopping further processing.")
                 break
         return all_issues, all_pull_requests, all_issue_links
-
-    def store_issues(self, all_issues):
-        for issue in all_issues:
-            print(issue["node"])
-
+    
     def store_pull_requests(self, all_pull_requests):
         pass
 
-    def get_issue_links(self, issue_file_path, pr_file_path, link_file_path, cache_duration=3600):
+    def store_issues(self, all_issues, issue_file_path):
+        issue_df = pd.DataFrame(columns=["issue_id", "issue_desc", "issue_comments", "closed_at", "created_at"])
+        for issue_edge in all_issues:
+            issue_node = issue_edge["node"]
+
+            # issue title is considered as a part of comments
+            # in the original TraceBERT implementation
+            comments = issue_node["title"]
+            for comment in issue_node["comments"]["edges"]:
+                comments = comments + " " + comment["node"]["bodyText"]
+
+            issue = self.issues_collection.add_issue(
+                number=issue_node["number"],
+                body=issue_node["body"],
+                createdAt=issue_node["createdAt"],
+                updatedAt=issue_node["updatedAt"],
+                comments=comments
+            )
+            issue_df = issue_df.append(issue, ignore_index=True)
+            issue_df.to_csv(issue_file_path)
+    
+    def get_issue_links(self, issue_file_path, pr_file_path, link_file_path, cache_duration=36000):
         """
         using the github graphql api collects all the basic issue details, pr details
         and also the link details between issues and commits
@@ -215,7 +260,10 @@ class GitRepoCollector:
             all_issues, all_pull_requests, all_issue_links = self.run_graphql_query()
             self.save_cache(cache_file, [all_issues, all_pull_requests, all_issue_links])
 
-        self.store_issues(all_issues)
+        if not os.path.isfile(issue_file_path):
+            self.store_issues(all_issues, issue_file_path)
+
+        # we are not saving the pull requests in a csv for now.
         self.store_pull_requests(all_pull_requests)
 
 
@@ -227,11 +275,6 @@ class GitRepoCollector:
         pr_file_path = os.path.join(output_dir, "pullrequest.csv")
         commit_file_path = os.path.join(output_dir, "commit.csv")
         link_file_path = os.path.join(output_dir, "link.csv")
-
-        # if not os.path.isfile(issue_file_path):
-        #     self.get_issue(issue_file_path)
-        # if not os.path.isfile(pr_file_path):
-        #     self.get_pull_request(pr_file_path)
 
         # first get all the commits possible using local git.
         if not os.path.isfile(commit_file_path):
