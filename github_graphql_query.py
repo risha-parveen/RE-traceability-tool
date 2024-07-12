@@ -5,7 +5,7 @@ GITHUB_GRAPHQL_URL = "https://api.github.com/graphql"
 GITHUB_GRAPHQL_QUERY = """
 query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor: String, $owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
-    issuesWithTimeline: issues(first: 2, after: $issuesTimelineCursor) {
+    issuesWithTimeline: issues(first: 50, after: $issuesTimelineCursor) {
       pageInfo {
         endCursor
         hasNextPage
@@ -13,7 +13,7 @@ query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor:
       edges {
         node {
           number
-          timelineItems(first: 20, itemTypes: [CROSS_REFERENCED_EVENT, CONNECTED_EVENT, REFERENCED_EVENT, CLOSED_EVENT, DISCONNECTED_EVENT]) {
+          timelineItems(first: 50, itemTypes: [CROSS_REFERENCED_EVENT, CONNECTED_EVENT, REFERENCED_EVENT, CLOSED_EVENT, DISCONNECTED_EVENT]) {
             edges {
               node {
                 __typename
@@ -81,7 +81,7 @@ query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor:
         }
       }
     }
-    basicIssues: issues(first: 2, after: $issuesCursor) { 
+    basicIssues: issues(first: 50, after: $issuesCursor) { 
     	pageInfo {
         endCursor
         hasNextPage
@@ -104,7 +104,7 @@ query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor:
         }
       }
     }
-    pullRequests(first: 2, after: $pullRequestsCursor) {
+    pullRequests(first: 50, after: $pullRequestsCursor) {
       pageInfo {
         endCursor
         hasNextPage
