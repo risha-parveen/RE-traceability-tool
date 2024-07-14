@@ -36,14 +36,81 @@ class Commit:
 
     def __str__(self):
         return str(self.to_dict())
+        
+class Issues:
+    def __init__(self):
+        self.issue_map = {}
 
+    def add_issue(self, number, body, createdAt, updatedAt, comments):
+        """
+        Add an Issue to the collection.
+        """
+        issue = {
+            "issue_id": number,
+            "issue_desc": body,
+            "issue_comments": comments,
+            "closed_at": updatedAt,
+            "created_at": createdAt
+        }
+        self.issue_map[number] = issue
+        return issue
+
+    def get_issue_by_id(self, issue_number):
+        """
+        Retrieve an Issue from the collection by its number.
+        """
+        return self.issue_map.get(issue_number)
+
+    def get_all_issues(self):
+        """
+        Retrieve all Issues in the collection.
+        """
+        return list(self.issue_map.values())
+
+    def __str__(self):
+        return str(list(self.issue_map.values()))
+    
+class PullRequests:
+    def __init__(self):
+        self.pr_map = {}
+
+    def add_pr(self, number, isCrossRepository, commitsLinked):
+        """
+        Add a pr to the collection.
+        """
+        pull_request = {
+            "pr_id": number,
+            "is_cross_repository": isCrossRepository,
+            "commits_linked": commitsLinked
+        }
+        self.pr_map[number] = pull_request
+        return pull_request
+
+    def get_pr_by_id(self, pr_number):
+        """
+        Retrieve a PR from the collection by its number.
+        """
+        return self.pr_map.get(pr_number)
+
+    def get_all_pr(self):
+        """
+        Retrieve all Issues in the collection.
+        """
+        return list(self.pr_map.values())
+
+    def __str__(self):
+        return str(list(self.pr_map.values()))
 
 class GitRepoCollector:
+    CACHE_DIR = './cache'
+
     def __init__(self, token, download_path, output_dir, repo_path):
         self.token = token
         self.download_path = download_path
         self.repo_path = repo_path
         self.output_dir = output_dir
+        self.issues_collection = Issues()
+        self.pr_collection = PullRequests()
 
     def clone_project(self):
         repo_url = "https://github.com/{}.git".format(self.repo_path)
@@ -81,6 +148,19 @@ class GitRepoCollector:
             commit_df = commit_df.append(commit.to_dict(), ignore_index=True)
         commit_df.to_csv(commit_file_path)
 
+    def save_cache(self, file_name, data):
+        if not os.path.exists(self.CACHE_DIR):
+            os.makedirs(self.CACHE_DIR)
+        with open(os.path.join(self.CACHE_DIR, file_name), 'w') as f:
+            json.dump(data, f)
+
+    def load_cache(self, file_name):
+        try:
+            with open(os.path.join(self.CACHE_DIR, file_name), 'r') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return None
+
     def make_github_graphql_request(self, token, variables):
         """
         Makes a GraphQL request to GitHub API.
@@ -107,8 +187,7 @@ class GitRepoCollector:
                 json={"query": GITHUB_GRAPHQL_QUERY, "variables": variables}
             )
             if response.status_code == 200:
-                result = response.json()
-                return result
+                return response.json()
 
         except requests.exceptions.RequestException as e:
             print(f"Error making GraphQL request: {e}")
@@ -165,13 +244,56 @@ class GitRepoCollector:
             else:
                 print("GraphQL request failed, stopping further processing.")
                 break
-        print(all_issues)
-        print()
-        print(all_pull_requests)
-        print()
-        print(all_issue_links)
+        return all_issues, all_pull_requests, all_issue_links
+    
+    def store_pull_requests(self, all_pull_requests):
+        for pr_edge in all_pull_requests:
+            pr_node = pr_edge["node"]
+            commitsLinked = []
 
-    def get_issue_links(self, issue_file_path, pr_file_path, link_file_path):
+            # if the PR is merged and has a merge commit store that commit id
+            if pr_node["mergeCommit"] and pr_node["mergeCommit"]["oid"]:
+                commitsLinked.append(pr_node["mergeCommit"]["oid"])
+
+            # go through timeline items to see if there is any other commits linked 
+            # through referenced event or closed event. Save all the linked commit ids
+
+            for timeline_edge in pr_node["timelineItems"]["edges"]:
+                timeline_node = timeline_edge["node"]
+                if timeline_node["__typename"] == "ReferencedEvent":
+                    commitsLinked.append(timeline_node["commit"]["oid"])
+                if timeline_node["__typename"] == "ClosedEvent" and timeline_node["closer"]:
+                    commitsLinked.append(timeline_node["closer"]["oid"])
+            
+
+            self.pr_collection.add_pr(
+                number = pr_node["number"],
+                isCrossRepository = pr_node["isCrossRepository"],
+                commitsLinked=commitsLinked
+            )
+
+    def store_issues(self, all_issues, issue_file_path):
+        issue_df = pd.DataFrame(columns=["issue_id", "issue_desc", "issue_comments", "closed_at", "created_at"])
+        for issue_edge in all_issues:
+            issue_node = issue_edge["node"]
+
+            # issue title is considered as a part of comments
+            # in the original TraceBERT implementation
+            comments = issue_node["title"]
+            for comment in issue_node["comments"]["edges"]:
+                comments = comments + " " + comment["node"]["bodyText"]
+
+            issue = self.issues_collection.add_issue(
+                number=issue_node["number"],
+                body=issue_node["body"],
+                createdAt=issue_node["createdAt"],
+                updatedAt=issue_node["updatedAt"],
+                comments=comments
+            )
+            issue_df = issue_df.append(issue, ignore_index=True)
+            issue_df.to_csv(issue_file_path)
+    
+    def get_issue_links(self, issue_file_path, link_file_path, cache_duration=36000):
         """
         using the github graphql api collects all the basic issue details, pr details
         and also the link details between issues and commits
@@ -179,10 +301,25 @@ class GitRepoCollector:
         arguments: issue_file_path - path to store the issue details
                     pr_file_path - path to store the pull request details
                     link_file_path - path to store the links
-
+                    cache_duration - duration for which the cache is valid (in seconds)
         """
 
-        self.run_graphql_query()
+        cache_file = 'graphql_cache.json'
+        cache_data = self.load_cache(cache_file)
+
+        # If cache is valid, use cached data
+        if cache_data and time.time() - os.path.getmtime(os.path.join(self.CACHE_DIR, cache_file)) < cache_duration:
+            all_issues, all_pull_requests, all_issue_links = cache_data
+        else:
+            # get all the issues, pull requests and issue links using the graphql api
+            all_issues, all_pull_requests, all_issue_links = self.run_graphql_query()
+            self.save_cache(cache_file, [all_issues, all_pull_requests, all_issue_links])
+
+        if not os.path.isfile(issue_file_path):
+            self.store_issues(all_issues, issue_file_path)
+
+            # we are not saving the pull requests in a csv for now.
+        self.store_pull_requests(all_pull_requests)
 
 
     def create_issue_commit_dataset(self):
@@ -190,27 +327,19 @@ class GitRepoCollector:
         if not os.path.isdir(output_dir):
             os.makedirs(output_dir)
         issue_file_path = os.path.join(output_dir, "issue.csv")
-        pr_file_path = os.path.join(output_dir, "pullrequest.csv")
         commit_file_path = os.path.join(output_dir, "commit.csv")
         link_file_path = os.path.join(output_dir, "link.csv")
-
-        # if not os.path.isfile(issue_file_path):
-        #     self.get_issue(issue_file_path)
-        # if not os.path.isfile(pr_file_path):
-        #     self.get_pull_request(pr_file_path)
 
         # first get all the commits possible using local git.
         if not os.path.isfile(commit_file_path):
             self.get_commits(commit_file_path)
 
         # handle the issues and pull requests
-        self.get_issue_links(issue_file_path, pr_file_path, link_file_path)
+        self.get_issue_links(issue_file_path, link_file_path)
         
         return output_dir
 
 if __name__ == "__main__":
-    
-    
     download_dir = 'G:/Document/git_projects'
     repo_path = 'risha-parveen/testing'
     logger.info("Processing repo: {}".format(repo_path))
