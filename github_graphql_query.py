@@ -116,6 +116,28 @@ query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor:
           mergeCommit { 
           	oid
           }
+          timelineItems(first:50, itemTypes: [REFERENCED_EVENT, CLOSED_EVENT]) { 
+          	edges {
+              node {
+                __typename
+                ... on ReferencedEvent {
+                  id
+                  commit {
+                    oid
+                  }
+                }
+                ... on ClosedEvent {
+                  id
+                  closer {
+                    __typename
+                    ... on Commit {
+                      oid
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -129,35 +151,3 @@ query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor:
 }
 
 """
-
-
-# # Function to make GraphQL request
-# def make_github_graphql_request(token, variables):
-#     """
-#     Makes a GraphQL request to GitHub API.
-
-#     Args:
-#     - token: GitHub personal access token
-#     - query: GraphQL query string
-#     - variables: Variables for the GraphQL query
-
-#     Returns:
-#     - JSON response from GitHub API
-#     """
-#     headers = {
-#         "Authorization": f"Bearer {token}",
-#         "Content-Type": "application/json"
-#     }
-
-#     try:
-#         response = requests.post(
-#             GITHUB_GRAPHQL_URL,
-#             headers=headers,
-#             json={"query": GITHUB_GRAPHQL_QUERY, "variables": variables}
-#         )
-#         if response.status_code == 200:
-#             result = response.json()
-
-#     except requests.exceptions.RequestException as e:
-#         print(f"Error making GraphQL request: {e}")
-#         return None
