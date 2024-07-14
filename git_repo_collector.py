@@ -13,6 +13,7 @@ import pandas as pd
 from tqdm import tqdm
 import json
 import requests
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,21 @@ class PullRequests:
     def __str__(self):
         return str(list(self.pr_map.values()))
 
+class Links:
+    def __init__(self):
+        self.link_map = {}
+
+    def add_link(self, issue_number, commit_id):   
+        if issue_number in self.link_map:    
+            self.link_map[issue_number].append(commit_id)
+        else:
+            self.link_map[issue_number] = [commit_id]
+
+    def get_all_links(self):
+        return self.link_map
+
+
+
 class GitRepoCollector:
     CACHE_DIR = './cache'
 
@@ -111,6 +127,7 @@ class GitRepoCollector:
         self.output_dir = output_dir
         self.issues_collection = Issues()
         self.pr_collection = PullRequests()
+        self.link_collection = Links()
 
     def clone_project(self):
         repo_url = "https://github.com/{}.git".format(self.repo_path)
@@ -265,7 +282,6 @@ class GitRepoCollector:
                 if timeline_node["__typename"] == "ClosedEvent" and timeline_node["closer"]:
                     commitsLinked.append(timeline_node["closer"]["oid"])
             
-
             self.pr_collection.add_pr(
                 number = pr_node["number"],
                 isCrossRepository = pr_node["isCrossRepository"],
@@ -292,7 +308,16 @@ class GitRepoCollector:
             )
             issue_df = issue_df.append(issue, ignore_index=True)
             issue_df.to_csv(issue_file_path)
-    
+
+    def store_links(self, all_issue_links, link_file_path):
+        for edge in all_issue_links:
+            issue_number = edge["node"]["number"]
+            for link in edge["node"]["timelineItems"]["edges"]:
+                link_node = link["node"]
+                if link_node["__typename"] == "ReferencedEvent":
+                    self.link_collection.add_link(issue_number, link_node["commit"]["oid"])
+        print(self.link_collection.get_all_links())
+
     def get_issue_links(self, issue_file_path, link_file_path, cache_duration=36000):
         """
         using the github graphql api collects all the basic issue details, pr details
@@ -319,7 +344,9 @@ class GitRepoCollector:
             self.store_issues(all_issues, issue_file_path)
 
             # we are not saving the pull requests in a csv for now.
-        self.store_pull_requests(all_pull_requests)
+            self.store_pull_requests(all_pull_requests)
+
+        self.store_links(all_issue_links, link_file_path)
 
 
     def create_issue_commit_dataset(self):
