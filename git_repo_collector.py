@@ -107,10 +107,14 @@ class Links:
         self.link_map = {}
 
     def add_link(self, issue_number, commit_id):   
-        if issue_number in self.link_map:    
+        if (issue_number in self.link_map) and (commit_id not in self.link_map[issue_number]):    
             self.link_map[issue_number].append(commit_id)
         else:
             self.link_map[issue_number] = [commit_id]
+    
+    def connect_link(self, issue_number, pull_request):
+        for commit_id in pull_request["commits_linked"]:
+            self.add_link(issue_number, commit_id)
 
     def get_all_links(self):
         return self.link_map
@@ -314,8 +318,27 @@ class GitRepoCollector:
             issue_number = edge["node"]["number"]
             for link in edge["node"]["timelineItems"]["edges"]:
                 link_node = link["node"]
+
+                # Referenced Event
                 if link_node["__typename"] == "ReferencedEvent":
                     self.link_collection.add_link(issue_number, link_node["commit"]["oid"])
+
+                # Closed Event
+                if link_node["__typename"] == "ClosedEvent":
+                    if link_node["closer"]:
+                        # Closed by a direct commit
+                        if link_node["closer"]["__typename"] == "Commit":
+                            self.link_collection.add_link(issue_number, link_node["closer"]["oid"])
+                        if link_node["closer"]["__typename"] == "PullRequest":
+                            pr_number = link_node["closer"]["number"]
+                            self.link_collection.connect_link(issue_number, self.pr_collection.get_pr_by_id(pr_number))
+
+                if link_node["__typename"] == "ConnectedEvent":
+                    pass
+
+                if link_node["__typename"] == "CrossReferencedEvent":
+                    pass
+
         print(self.link_collection.get_all_links())
 
     def get_issue_links(self, issue_file_path, link_file_path, cache_duration=36000):
@@ -341,10 +364,11 @@ class GitRepoCollector:
             self.save_cache(cache_file, [all_issues, all_pull_requests, all_issue_links])
 
         if not os.path.isfile(issue_file_path):
-            self.store_issues(all_issues, issue_file_path)
+            pass
+        self.store_issues(all_issues, issue_file_path)
 
             # we are not saving the pull requests in a csv for now.
-            self.store_pull_requests(all_pull_requests)
+        self.store_pull_requests(all_pull_requests)
 
         self.store_links(all_issue_links, link_file_path)
 
