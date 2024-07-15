@@ -107,14 +107,21 @@ class Links:
         self.link_map = {}
 
     def add_link(self, issue_number, commit_id):   
-        if (issue_number in self.link_map) and (commit_id not in self.link_map[issue_number]):    
-            self.link_map[issue_number].append(commit_id)
+        if (issue_number in self.link_map):    
+            self.link_map[issue_number].add(commit_id)
         else:
-            self.link_map[issue_number] = [commit_id]
+            self.link_map[issue_number] = {commit_id}
     
     def connect_link(self, issue_number, pull_request):
-        for commit_id in pull_request["commits_linked"]:
-            self.add_link(issue_number, commit_id)
+        # for commit_id in pull_request["commits_linked"]:
+        #     self.add_link(issue_number, commit_id)
+        if issue_number in self.link_map:
+            self.link_map[issue_number].update(pull_request["commits_linked"])
+        else:
+            self.link_map[issue_number] = set(pull_request["commits_linked"])
+
+    def remove_link(self, issue_number, pull_request):
+        self.link_map[issue_number].difference_update(set(pull_request["commits_linked"]))
 
     def get_all_links(self):
         return self.link_map
@@ -315,29 +322,54 @@ class GitRepoCollector:
 
     def store_links(self, all_issue_links, link_file_path):
         for edge in all_issue_links:
+            # Iterating through each issue
             issue_number = edge["node"]["number"]
             for link in edge["node"]["timelineItems"]["edges"]:
+                # Iterating through the links of each issue
                 link_node = link["node"]
+                link_type = link_node["__typename"]
 
                 # Referenced Event
-                if link_node["__typename"] == "ReferencedEvent":
+                if link_type == "ReferencedEvent":
                     self.link_collection.add_link(issue_number, link_node["commit"]["oid"])
 
                 # Closed Event
-                if link_node["__typename"] == "ClosedEvent":
-                    if link_node["closer"]:
+                elif link_type == "ClosedEvent":
+                    closer = link_node["closer"]
+                    if closer:
                         # Closed by a direct commit
-                        if link_node["closer"]["__typename"] == "Commit":
-                            self.link_collection.add_link(issue_number, link_node["closer"]["oid"])
-                        if link_node["closer"]["__typename"] == "PullRequest":
-                            pr_number = link_node["closer"]["number"]
+                        if closer["__typename"] == "Commit":
+                            self.link_collection.add_link(issue_number, closer["oid"])
+                        # Closed by a pull request
+                        if closer["__typename"] == "PullRequest":
+                            pr_number = closer["number"]
+                            if closer["isCrossRepository"]:
+                                continue
                             self.link_collection.connect_link(issue_number, self.pr_collection.get_pr_by_id(pr_number))
 
-                if link_node["__typename"] == "ConnectedEvent":
+                # Connected event
+                elif link_type == "ConnectedEvent":
+                    subject = link_node["subject"]
+                    # Issue connected manually to a pull request                    
+                    pr_number = subject["number"]
+                    if subject["isCrossRepository"]:
+                        continue
+                    self.link_collection.connect_link(issue_number, self.pr_collection.get_pr_by_id(pr_number))
+                
+                # Disconnected event
+                elif link_type == "DisconnectedEvent":
+                    # to disconnect (remove) the links which were already store using connected event. 
+                    # First connected and was later disconnected by the user. So now the link does not exist.
+                    subject = link_node["subject"]
+                    pr_number = subject["number"]
+                    if subject["isCrossRepository"]:
+                        continue
+                    self.link_collection.remove_link(issue_number, self.pr_collection.get_pr_by_id(pr_number))
+                
+                # Cross referenced event
+                elif link_type == "CrossReferencedEvent":
                     pass
-
-                if link_node["__typename"] == "CrossReferencedEvent":
-                    pass
+                
 
         print(self.link_collection.get_all_links())
 
