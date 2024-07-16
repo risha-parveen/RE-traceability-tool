@@ -78,14 +78,16 @@ class PullRequests:
     def __init__(self):
         self.pr_map = {}
 
-    def add_pr(self, number, isCrossRepository, commitsLinked):
+    def add_pr(self, number, body, isCrossRepository, commitsLinked, comments):
         """
         Add a pr to the collection.
         """
         pull_request = {
             "pr_id": number,
+            "body": body,
             "is_cross_repository": isCrossRepository,
-            "commits_linked": commitsLinked
+            "commits_linked": commitsLinked,
+            "pr_comments": comments
         }
         self.pr_map[number] = pull_request
         return pull_request
@@ -236,6 +238,8 @@ class GitRepoCollector:
                 json={"query": GITHUB_GRAPHQL_QUERY, "variables": variables}
             )
             if response.status_code == 200:
+                with open('./unused/output.json', 'w') as json_file:
+                    json.dump(response.json(), json_file, indent=2)
                 return response.json()
 
         except requests.exceptions.RequestException as e:
@@ -262,6 +266,7 @@ class GitRepoCollector:
         while True:
             hasNextPage = False
             response_data = self.make_github_graphql_request(self.token, variables)
+            
             if response_data:
                 try:
 
@@ -314,10 +319,16 @@ class GitRepoCollector:
                 if timeline_node["__typename"] == "ClosedEvent" and timeline_node["closer"]:
                     commitsLinked.append(timeline_node["closer"]["oid"])
             
+            comments = pr_node["title"]
+            for comment in pr_node["comments"]["edges"]:
+                comments = comments + " " + comment["node"]["bodyText"]
+            
             self.pr_collection.add_pr(
                 number = pr_node["number"],
+                body = pr_node["body"],
                 isCrossRepository = pr_node["isCrossRepository"],
-                commitsLinked=commitsLinked
+                commitsLinked=commitsLinked,
+                comments = comments
             )
 
     def store_issues(self, all_issues, issue_file_path):
@@ -365,14 +376,29 @@ class GitRepoCollector:
 
         return list(groups.values())
 
+    def comment_exist(self, issue_id, referenced_id, typename):
+        if typename == 'Issue':
+            item = self.issues_collection.get_issue_by_id(referenced_id)
+            content = item["issue_desc"] + " " + item["issue_comments"]
+        else:
+            item = self.pr_collection.get_pr_by_id(referenced_id)
+            content = item["body"] + " " + item["pr_comments"]
+        
+        pattern = rf"(?<!\w)#{issue_id}(?!\d)"
+        match = re.search(pattern, content)
+
+        return True if match else False
+
     def store_links(self, all_issue_links, link_file_path):
         file_path = './unused/data.json'
         chained_issue_sets = []
+        
         for edge in all_issue_links:
             # Iterating through each issue
             current_issue_id = edge["node"]["number"]
             commits_for_issue = []
             current_chained_issues = []
+            chain_disconnected = []
             for link in edge["node"]["timelineItems"]["edges"]:
                 # Iterating through the links of each issue
                 link_node = link["node"]
@@ -421,26 +447,34 @@ class GitRepoCollector:
                         for commit in commits_linked:
                             commits_for_issue.remove(commit)
                     elif disconnected_subject["__typename"] == "Issue":
-                        # TODO decide what happens here
-                        pass
+                        issue2_id = disconnected_subject["number"]
+                        chain_disconnected.append(issue2_id)
 
                 # Cross referenced event
                 elif link_type == "CrossReferencedEvent":
                     source = link_node["source"]
-                    if source["__typename"] == "PullRequest":
+                    typename = source["__typename"]
+                    if not self.comment_exist(current_issue_id, source["number"], typename):
+                        continue
+                    if typename == "PullRequest":
                         if source["isCrossRepository"]:
                             continue
                         commits_linked = self.pr_collection.get_pr_by_id(source["number"])["commits_linked"]
                         commits_for_issue.extend(commits_linked)
-                    elif source["__typename"] == "Issue":
+                    elif typename == "Issue":
                         issue2_id = source["number"]
                         current_chained_issues.extend([current_issue_id, issue2_id])
-
-            chained_issue_sets.append(set(current_chained_issues))
+            
+            if len(current_chained_issues):
+                for disconnected_issue in chain_disconnected:
+                    current_chained_issues.remove(disconnected_issue)
+                chained_issue_sets.append(set(current_chained_issues))
 
             if len(commits_for_issue):
                 self.link_collection.add_links(current_issue_id, commits_for_issue)
         
+        print(chained_issue_sets)
+
         print(self.merge_sets(chained_issue_sets))
 
         # this is just for checking the output.
@@ -466,6 +500,7 @@ class GitRepoCollector:
 
         # If cache is valid, use cached data
         if cache_data and time.time() - os.path.getmtime(os.path.join(self.CACHE_DIR, cache_file)) < cache_duration:
+            print('from cache')
             all_issues, all_pull_requests, all_issue_links = cache_data
         else:
             # get all the issues, pull requests and issue links using the graphql api
