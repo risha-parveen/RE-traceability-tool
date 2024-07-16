@@ -119,6 +119,9 @@ class Links:
             self.link_map[issue_number].update(commits)
         else:
             self.link_map[issue_number] = set(commits)
+    
+    def get_link_by_id(self, issue_number):
+        return self.link_map[issue_number] if issue_number in self.link_map else set()
 
     def get_all_links(self):
         return self.link_map
@@ -389,6 +392,17 @@ class GitRepoCollector:
 
         return True if match else False
 
+    def chain_related_issues(self, chained_issue_sets):
+        chained_issue_sets = self.merge_sets(chained_issue_sets)
+
+        for chain in chained_issue_sets: 
+            common_set = set()          
+            for current_issue in chain:
+                linked_commits = self.link_collection.get_link_by_id(current_issue)
+                common_set.update(linked_commits)
+            for current_issue in chain:
+                self.link_collection.add_links(current_issue, common_set)
+    
     def store_links(self, all_issue_links, link_file_path):
         file_path = './unused/data.json'
         chained_issue_sets = []
@@ -473,9 +487,7 @@ class GitRepoCollector:
             if len(commits_for_issue):
                 self.link_collection.add_links(current_issue_id, commits_for_issue)
         
-        print(chained_issue_sets)
-
-        print(self.merge_sets(chained_issue_sets))
+        self.chain_related_issues(chained_issue_sets)
 
         # this is just for checking the output.
         # TODO: delete later
