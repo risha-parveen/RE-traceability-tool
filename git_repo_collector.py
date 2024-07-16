@@ -13,7 +13,7 @@ import pandas as pd
 from tqdm import tqdm
 import json
 import requests
-from collections import defaultdict
+from collections import deque
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,9 @@ class Issues:
         Retrieve all Issues in the collection.
         """
         return list(self.issue_map.values())
+    
+    def get_all_issues_map(self):
+        return self.issue_map
 
     def __str__(self):
         return str(list(self.issue_map.values()))
@@ -98,6 +101,9 @@ class PullRequests:
         Retrieve all Issues in the collection.
         """
         return list(self.pr_map.values())
+    
+    def get_all_pr_map(self):
+        return self.pr_map
 
     def __str__(self):
         return str(list(self.pr_map.values()))
@@ -106,27 +112,42 @@ class Links:
     def __init__(self):
         self.link_map = {}
 
-    def add_link(self, issue_number, commit_id):   
-        if (issue_number in self.link_map):    
-            self.link_map[issue_number].add(commit_id)
+    def add_links(self, issue_number, commits):   
+        if issue_number in self.link_map:    
+            self.link_map[issue_number].update(commits)
         else:
-            self.link_map[issue_number] = {commit_id}
-    
-    def connect_link(self, issue_number, pull_request):
-        # for commit_id in pull_request["commits_linked"]:
-        #     self.add_link(issue_number, commit_id)
-        if issue_number in self.link_map:
-            self.link_map[issue_number].update(pull_request["commits_linked"])
-        else:
-            self.link_map[issue_number] = set(pull_request["commits_linked"])
-
-    def remove_link(self, issue_number, pull_request):
-        self.link_map[issue_number].difference_update(set(pull_request["commits_linked"]))
+            self.link_map[issue_number] = set(commits)
 
     def get_all_links(self):
         return self.link_map
 
+class DisjointSetUnion:
+    def __init__(self):
+        self.parent = {}
+        self.rank = {}
 
+    def find(self, x):
+        if self.parent[x] != x:
+            self.parent[x] = self.find(self.parent[x])  # Path compression
+        return self.parent[x]
+
+    def union(self, x, y):
+        rootX = self.find(x)
+        rootY = self.find(y)
+
+        if rootX != rootY:
+            if self.rank[rootX] > self.rank[rootY]:
+                self.parent[rootY] = rootX
+            elif self.rank[rootX] < self.rank[rootY]:
+                self.parent[rootX] = rootY
+            else:
+                self.parent[rootY] = rootX
+                self.rank[rootX] += 1
+
+    def add(self, x):
+        if x not in self.parent:
+            self.parent[x] = x
+            self.rank[x] = 0
 
 class GitRepoCollector:
     CACHE_DIR = './cache'
@@ -319,11 +340,39 @@ class GitRepoCollector:
             )
             issue_df = issue_df.append(issue, ignore_index=True)
             issue_df.to_csv(issue_file_path)
+    
+    def merge_sets(self, sets):
+        dsu = DisjointSetUnion()
+
+        # Add all elements to DSU
+        for s in sets:
+            for element in s:
+                dsu.add(element)
+
+        # Union elements within the same set
+        for s in sets:
+            elements = list(s)
+            for i in range(1, len(elements)):
+                dsu.union(elements[0], elements[i])
+
+        # Collect all unique sets
+        groups = {}
+        for element in dsu.parent:
+            root = dsu.find(element)
+            if root not in groups:
+                groups[root] = set()
+            groups[root].add(element)
+
+        return list(groups.values())
 
     def store_links(self, all_issue_links, link_file_path):
+        file_path = './unused/data.json'
+        chained_issue_sets = []
         for edge in all_issue_links:
             # Iterating through each issue
-            issue_number = edge["node"]["number"]
+            current_issue_id = edge["node"]["number"]
+            commits_for_issue = []
+            current_chained_issues = []
             for link in edge["node"]["timelineItems"]["edges"]:
                 # Iterating through the links of each issue
                 link_node = link["node"]
@@ -331,7 +380,7 @@ class GitRepoCollector:
 
                 # Referenced Event
                 if link_type == "ReferencedEvent":
-                    self.link_collection.add_link(issue_number, link_node["commit"]["oid"])
+                    commits_for_issue.append(link_node["commit"]["oid"])
 
                 # Closed Event
                 elif link_type == "ClosedEvent":
@@ -339,39 +388,67 @@ class GitRepoCollector:
                     if closer:
                         # Closed by a direct commit
                         if closer["__typename"] == "Commit":
-                            self.link_collection.add_link(issue_number, closer["oid"])
+                            commits_for_issue.append(closer["oid"])
                         # Closed by a pull request
-                        if closer["__typename"] == "PullRequest":
-                            pr_number = closer["number"]
+                        elif closer["__typename"] == "PullRequest":
                             if closer["isCrossRepository"]:
                                 continue
-                            self.link_collection.connect_link(issue_number, self.pr_collection.get_pr_by_id(pr_number))
+                            commits_linked = self.pr_collection.get_pr_by_id(closer["number"])["commits_linked"]
+                            commits_for_issue.extend(commits_linked)
 
                 # Connected event
                 elif link_type == "ConnectedEvent":
                     subject = link_node["subject"]
-                    # Issue connected manually to a pull request                    
-                    pr_number = subject["number"]
-                    if subject["isCrossRepository"]:
-                        continue
-                    self.link_collection.connect_link(issue_number, self.pr_collection.get_pr_by_id(pr_number))
+                    # Issue connected manually to a pull request 
+                    if subject["__typename"] == "PullRequest":  
+                        if subject["isCrossRepository"]:
+                            continue
+                        commits_linked = self.pr_collection.get_pr_by_id(subject["number"])["commits_linked"]
+                        commits_for_issue.extend(commits_linked)
+                    elif subject["__typename"] == "Issue":
+                        issue2_id = subject["number"]
+                        current_chained_issues.extend([current_issue_id, issue2_id])
                 
                 # Disconnected event
                 elif link_type == "DisconnectedEvent":
                     # to disconnect (remove) the links which were already store using connected event. 
                     # First connected and was later disconnected by the user. So now the link does not exist.
-                    subject = link_node["subject"]
-                    pr_number = subject["number"]
-                    if subject["isCrossRepository"]:
-                        continue
-                    self.link_collection.remove_link(issue_number, self.pr_collection.get_pr_by_id(pr_number))
-                
+                    disconnected_subject = link_node["subject"]
+                    if disconnected_subject["__typename"] == "PullRequest":
+                        if disconnected_subject["isCrossRepository"]:
+                            continue
+                        commits_linked = self.pr_collection.get_pr_by_id(disconnected_subject["number"])["commits_linked"]
+                        for commit in commits_linked:
+                            commits_for_issue.remove(commit)
+                    elif disconnected_subject["__typename"] == "Issue":
+                        # TODO decide what happens here
+                        pass
+
                 # Cross referenced event
                 elif link_type == "CrossReferencedEvent":
-                    pass
-                
+                    source = link_node["source"]
+                    if source["__typename"] == "PullRequest":
+                        if source["isCrossRepository"]:
+                            continue
+                        commits_linked = self.pr_collection.get_pr_by_id(source["number"])["commits_linked"]
+                        commits_for_issue.extend(commits_linked)
+                    elif source["__typename"] == "Issue":
+                        issue2_id = source["number"]
+                        current_chained_issues.extend([current_issue_id, issue2_id])
 
-        print(self.link_collection.get_all_links())
+            chained_issue_sets.append(set(current_chained_issues))
+
+            if len(commits_for_issue):
+                self.link_collection.add_links(current_issue_id, commits_for_issue)
+        
+        print(self.merge_sets(chained_issue_sets))
+
+        # this is just for checking the output.
+        # TODO: delete later
+        json_serializable_data = {key: list(value) for key, value in self.link_collection.get_all_links().items()}
+        json_data = {**json_serializable_data, **self.pr_collection.get_all_pr_map()}
+        with open(file_path, 'w') as json_file:
+            json.dump(json_data, json_file, indent=2)
 
     def get_issue_links(self, issue_file_path, link_file_path, cache_duration=36000):
         """
