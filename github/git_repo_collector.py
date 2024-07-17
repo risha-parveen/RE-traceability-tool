@@ -155,13 +155,13 @@ class DisjointSetUnion:
             self.rank[x] = 0
 
 class GitRepoCollector:
-    CACHE_DIR = './cache'
 
     def __init__(self, token, download_path, output_dir, repo_path):
         self.token = token
         self.download_path = download_path
         self.repo_path = repo_path
         self.output_dir = output_dir
+        self.cache_dir = os.path.join('../cache/' + repo_path)
         self.issues_collection = Issues()
         self.pr_collection = PullRequests()
         self.link_collection = Links()
@@ -203,14 +203,15 @@ class GitRepoCollector:
         commit_df.to_csv(commit_file_path)
 
     def save_cache(self, file_name, data):
-        if not os.path.exists(self.CACHE_DIR):
-            os.makedirs(self.CACHE_DIR)
-        with open(os.path.join(self.CACHE_DIR, file_name), 'w') as f:
+        if not os.path.exists(self.cache_dir):
+            os.makedirs(self.cache_dir)
+        
+        with open(os.path.join(self.cache_dir, file_name), 'w') as f:
             json.dump(data, f)
 
     def load_cache(self, file_name):
         try:
-            with open(os.path.join(self.CACHE_DIR, file_name), 'r') as f:
+            with open(os.path.join(self.cache_dir, file_name), 'r') as f:
                 return json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             return None
@@ -241,8 +242,6 @@ class GitRepoCollector:
                 json={"query": GITHUB_GRAPHQL_QUERY, "variables": variables}
             )
             if response.status_code == 200:
-                with open('./unused/output.json', 'w') as json_file:
-                    json.dump(response.json(), json_file, indent=2)
                 return response.json()
 
         except requests.exceptions.RequestException as e:
@@ -401,10 +400,11 @@ class GitRepoCollector:
                 linked_commits = self.link_collection.get_link_by_id(current_issue)
                 common_set.update(linked_commits)
             for current_issue in chain:
-                self.link_collection.add_links(current_issue, common_set)
+                if len(common_set):
+                    self.link_collection.add_links(current_issue, common_set)
     
     def store_links(self, all_issue_links, link_file_path):
-        file_path = './unused/data.json'
+        file_path = '../unused/data.json'
         chained_issue_sets = []
         
         for edge in all_issue_links:
@@ -492,9 +492,9 @@ class GitRepoCollector:
         # this is just for checking the output.
         # TODO: delete later
         json_serializable_data = {key: list(value) for key, value in self.link_collection.get_all_links().items()}
-        json_data = {**json_serializable_data, **self.pr_collection.get_all_pr_map()}
-        with open(file_path, 'w') as json_file:
-            json.dump(json_data, json_file, indent=2)
+        
+        with open(link_file_path, 'w') as json_file:
+            json.dump(json_serializable_data, json_file, indent=2)
 
     def get_issue_links(self, issue_file_path, link_file_path, cache_duration=36000):
         """
@@ -507,11 +507,11 @@ class GitRepoCollector:
                     cache_duration - duration for which the cache is valid (in seconds)
         """
 
-        cache_file = 'graphql_cache.json'
+        cache_file = 'graphql_query_response.json'
         cache_data = self.load_cache(cache_file)
 
         # If cache is valid, use cached data
-        if cache_data and time.time() - os.path.getmtime(os.path.join(self.CACHE_DIR, cache_file)) < cache_duration:
+        if cache_data and time.time() - os.path.getmtime(os.path.join(self.cache_dir, cache_file)) < cache_duration:
             print('from cache')
             all_issues, all_pull_requests, all_issue_links = cache_data
         else:
@@ -519,11 +519,9 @@ class GitRepoCollector:
             all_issues, all_pull_requests, all_issue_links = self.run_graphql_query()
             self.save_cache(cache_file, [all_issues, all_pull_requests, all_issue_links])
 
-        if not os.path.isfile(issue_file_path):
-            pass
         self.store_issues(all_issues, issue_file_path)
 
-            # we are not saving the pull requests in a csv for now.
+        # we are not saving the pull requests in a csv for now.
         self.store_pull_requests(all_pull_requests)
 
         self.store_links(all_issue_links, link_file_path)
@@ -535,7 +533,7 @@ class GitRepoCollector:
             os.makedirs(output_dir)
         issue_file_path = os.path.join(output_dir, "issue.csv")
         commit_file_path = os.path.join(output_dir, "commit.csv")
-        link_file_path = os.path.join(output_dir, "link.csv")
+        link_file_path = os.path.join(output_dir, "link.json")
 
         # first get all the commits possible using local git.
         if not os.path.isfile(commit_file_path):
@@ -552,9 +550,9 @@ if __name__ == "__main__":
     logger.info("Processing repo: {}".format(repo_path))
 
     config = configparser.ConfigParser()
-    config.read('credentials.cfg')
+    config.read('../credentials.cfg')
     git_token = config['GIT']['TOKEN']
 
-    output_dir = './data/git_data'
+    output_dir = '../data/git_data'
     rpc = GitRepoCollector(git_token, download_dir, output_dir, repo_path)
     rpc.create_issue_commit_dataset()
