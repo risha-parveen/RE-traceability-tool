@@ -112,9 +112,19 @@ query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor:
       edges {
         node {
           number
+          title
+          body
           isCrossRepository
           mergeCommit { 
           	oid
+          }
+          comments(first: 100) {
+            edges {
+              node {
+                id
+                bodyText
+              }
+            }
           }
           timelineItems(first:50, itemTypes: [REFERENCED_EVENT, CLOSED_EVENT]) { 
           	edges {

@@ -13,6 +13,7 @@ import pandas as pd
 from tqdm import tqdm
 import json
 import requests
+from collections import deque
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,9 @@ class Issues:
         Retrieve all Issues in the collection.
         """
         return list(self.issue_map.values())
+    
+    def get_all_issues_map(self):
+        return self.issue_map
 
     def __str__(self):
         return str(list(self.issue_map.values()))
@@ -74,14 +78,16 @@ class PullRequests:
     def __init__(self):
         self.pr_map = {}
 
-    def add_pr(self, number, isCrossRepository, commitsLinked):
+    def add_pr(self, number, body, isCrossRepository, commitsLinked, comments):
         """
         Add a pr to the collection.
         """
         pull_request = {
             "pr_id": number,
+            "body": body,
             "is_cross_repository": isCrossRepository,
-            "commits_linked": commitsLinked
+            "commits_linked": commitsLinked,
+            "pr_comments": comments
         }
         self.pr_map[number] = pull_request
         return pull_request
@@ -97,20 +103,68 @@ class PullRequests:
         Retrieve all Issues in the collection.
         """
         return list(self.pr_map.values())
+    
+    def get_all_pr_map(self):
+        return self.pr_map
 
     def __str__(self):
         return str(list(self.pr_map.values()))
 
+class Links:
+    def __init__(self):
+        self.link_map = {}
+
+    def add_links(self, issue_number, commits):   
+        if issue_number in self.link_map:    
+            self.link_map[issue_number].update(commits)
+        else:
+            self.link_map[issue_number] = set(commits)
+    
+    def get_link_by_id(self, issue_number):
+        return self.link_map[issue_number] if issue_number in self.link_map else set()
+
+    def get_all_links(self):
+        return self.link_map
+
+class DisjointSetUnion:
+    def __init__(self):
+        self.parent = {}
+        self.rank = {}
+
+    def find(self, x):
+        if self.parent[x] != x:
+            self.parent[x] = self.find(self.parent[x])  # Path compression
+        return self.parent[x]
+
+    def union(self, x, y):
+        rootX = self.find(x)
+        rootY = self.find(y)
+
+        if rootX != rootY:
+            if self.rank[rootX] > self.rank[rootY]:
+                self.parent[rootY] = rootX
+            elif self.rank[rootX] < self.rank[rootY]:
+                self.parent[rootX] = rootY
+            else:
+                self.parent[rootY] = rootX
+                self.rank[rootX] += 1
+
+    def add(self, x):
+        if x not in self.parent:
+            self.parent[x] = x
+            self.rank[x] = 0
+
 class GitRepoCollector:
-    CACHE_DIR = './cache'
 
     def __init__(self, token, download_path, output_dir, repo_path):
         self.token = token
         self.download_path = download_path
         self.repo_path = repo_path
         self.output_dir = output_dir
+        self.cache_dir = os.path.join('../cache/' + repo_path)
         self.issues_collection = Issues()
         self.pr_collection = PullRequests()
+        self.link_collection = Links()
 
     def clone_project(self):
         repo_url = "https://github.com/{}.git".format(self.repo_path)
@@ -149,14 +203,15 @@ class GitRepoCollector:
         commit_df.to_csv(commit_file_path)
 
     def save_cache(self, file_name, data):
-        if not os.path.exists(self.CACHE_DIR):
-            os.makedirs(self.CACHE_DIR)
-        with open(os.path.join(self.CACHE_DIR, file_name), 'w') as f:
+        if not os.path.exists(self.cache_dir):
+            os.makedirs(self.cache_dir)
+        
+        with open(os.path.join(self.cache_dir, file_name), 'w') as f:
             json.dump(data, f)
 
     def load_cache(self, file_name):
         try:
-            with open(os.path.join(self.CACHE_DIR, file_name), 'r') as f:
+            with open(os.path.join(self.cache_dir, file_name), 'r') as f:
                 return json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             return None
@@ -213,6 +268,7 @@ class GitRepoCollector:
         while True:
             hasNextPage = False
             response_data = self.make_github_graphql_request(self.token, variables)
+            
             if response_data:
                 try:
 
@@ -265,11 +321,16 @@ class GitRepoCollector:
                 if timeline_node["__typename"] == "ClosedEvent" and timeline_node["closer"]:
                     commitsLinked.append(timeline_node["closer"]["oid"])
             
-
+            comments = pr_node["title"]
+            for comment in pr_node["comments"]["edges"]:
+                comments = comments + " " + comment["node"]["bodyText"]
+            
             self.pr_collection.add_pr(
                 number = pr_node["number"],
+                body = pr_node["body"],
                 isCrossRepository = pr_node["isCrossRepository"],
-                commitsLinked=commitsLinked
+                commitsLinked=commitsLinked,
+                comments = comments
             )
 
     def store_issues(self, all_issues, issue_file_path):
@@ -293,6 +354,148 @@ class GitRepoCollector:
             issue_df = issue_df.append(issue, ignore_index=True)
             issue_df.to_csv(issue_file_path)
     
+    def merge_sets(self, sets):
+        dsu = DisjointSetUnion()
+
+        # Add all elements to DSU
+        for s in sets:
+            for element in s:
+                dsu.add(element)
+
+        # Union elements within the same set
+        for s in sets:
+            elements = list(s)
+            for i in range(1, len(elements)):
+                dsu.union(elements[0], elements[i])
+
+        # Collect all unique sets
+        groups = {}
+        for element in dsu.parent:
+            root = dsu.find(element)
+            if root not in groups:
+                groups[root] = set()
+            groups[root].add(element)
+
+        return list(groups.values())
+
+    def comment_exist(self, issue_id, referenced_id, typename):
+        if typename == 'Issue':
+            item = self.issues_collection.get_issue_by_id(referenced_id)
+            content = item["issue_desc"] + " " + item["issue_comments"]
+        else:
+            item = self.pr_collection.get_pr_by_id(referenced_id)
+            content = item["body"] + " " + item["pr_comments"]
+        
+        pattern = rf"(?<!\w)#{issue_id}(?!\d)"
+        match = re.search(pattern, content)
+
+        return True if match else False
+
+    def chain_related_issues(self, chained_issue_sets):
+        chained_issue_sets = self.merge_sets(chained_issue_sets)
+
+        for chain in chained_issue_sets: 
+            common_set = set()          
+            for current_issue in chain:
+                linked_commits = self.link_collection.get_link_by_id(current_issue)
+                common_set.update(linked_commits)
+            for current_issue in chain:
+                if len(common_set):
+                    self.link_collection.add_links(current_issue, common_set)
+    
+    def store_links(self, all_issue_links, link_file_path):
+        file_path = '../unused/data.json'
+        chained_issue_sets = []
+        
+        for edge in all_issue_links:
+            # Iterating through each issue
+            current_issue_id = edge["node"]["number"]
+            commits_for_issue = []
+            current_chained_issues = []
+            chain_disconnected = []
+            for link in edge["node"]["timelineItems"]["edges"]:
+                # Iterating through the links of each issue
+                link_node = link["node"]
+                link_type = link_node["__typename"]
+
+                # Referenced Event
+                if link_type == "ReferencedEvent":
+                    commits_for_issue.append(link_node["commit"]["oid"])
+
+                # Closed Event
+                elif link_type == "ClosedEvent":
+                    closer = link_node["closer"]
+                    if closer:
+                        # Closed by a direct commit
+                        if closer["__typename"] == "Commit":
+                            commits_for_issue.append(closer["oid"])
+                        # Closed by a pull request
+                        elif closer["__typename"] == "PullRequest":
+                            if closer["isCrossRepository"]:
+                                continue
+                            commits_linked = self.pr_collection.get_pr_by_id(closer["number"])["commits_linked"]
+                            commits_for_issue.extend(commits_linked)
+
+                # Connected event
+                elif link_type == "ConnectedEvent":
+                    subject = link_node["subject"]
+                    # Issue connected manually to a pull request 
+                    if subject["__typename"] == "PullRequest":  
+                        if subject["isCrossRepository"]:
+                            continue
+                        commits_linked = self.pr_collection.get_pr_by_id(subject["number"])["commits_linked"]
+                        commits_for_issue.extend(commits_linked)
+                    elif subject["__typename"] == "Issue":
+                        issue2_id = subject["number"]
+                        current_chained_issues.extend([current_issue_id, issue2_id])
+                
+                # Disconnected event
+                elif link_type == "DisconnectedEvent":
+                    # to disconnect (remove) the links which were already store using connected event. 
+                    # First connected and was later disconnected by the user. So now the link does not exist.
+                    disconnected_subject = link_node["subject"]
+                    if disconnected_subject["__typename"] == "PullRequest":
+                        if disconnected_subject["isCrossRepository"]:
+                            continue
+                        commits_linked = self.pr_collection.get_pr_by_id(disconnected_subject["number"])["commits_linked"]
+                        for commit in commits_linked:
+                            commits_for_issue.remove(commit)
+                    elif disconnected_subject["__typename"] == "Issue":
+                        issue2_id = disconnected_subject["number"]
+                        chain_disconnected.append(issue2_id)
+
+                # Cross referenced event
+                elif link_type == "CrossReferencedEvent":
+                    source = link_node["source"]
+                    typename = source["__typename"]
+                    if not self.comment_exist(current_issue_id, source["number"], typename):
+                        continue
+                    if typename == "PullRequest":
+                        if source["isCrossRepository"]:
+                            continue
+                        commits_linked = self.pr_collection.get_pr_by_id(source["number"])["commits_linked"]
+                        commits_for_issue.extend(commits_linked)
+                    elif typename == "Issue":
+                        issue2_id = source["number"]
+                        current_chained_issues.extend([current_issue_id, issue2_id])
+            
+            if len(current_chained_issues):
+                for disconnected_issue in chain_disconnected:
+                    current_chained_issues.remove(disconnected_issue)
+                chained_issue_sets.append(set(current_chained_issues))
+
+            if len(commits_for_issue):
+                self.link_collection.add_links(current_issue_id, commits_for_issue)
+        
+        self.chain_related_issues(chained_issue_sets)
+
+        # this is just for checking the output.
+        # TODO: delete later
+        json_serializable_data = {key: list(value) for key, value in self.link_collection.get_all_links().items()}
+        
+        with open(link_file_path, 'w') as json_file:
+            json.dump(json_serializable_data, json_file, indent=2)
+
     def get_issue_links(self, issue_file_path, link_file_path, cache_duration=36000):
         """
         using the github graphql api collects all the basic issue details, pr details
@@ -304,22 +507,24 @@ class GitRepoCollector:
                     cache_duration - duration for which the cache is valid (in seconds)
         """
 
-        cache_file = 'graphql_cache.json'
+        cache_file = 'graphql_query_response.json'
         cache_data = self.load_cache(cache_file)
 
         # If cache is valid, use cached data
-        if cache_data and time.time() - os.path.getmtime(os.path.join(self.CACHE_DIR, cache_file)) < cache_duration:
+        if cache_data and time.time() - os.path.getmtime(os.path.join(self.cache_dir, cache_file)) < cache_duration:
+            print('from cache')
             all_issues, all_pull_requests, all_issue_links = cache_data
         else:
             # get all the issues, pull requests and issue links using the graphql api
             all_issues, all_pull_requests, all_issue_links = self.run_graphql_query()
             self.save_cache(cache_file, [all_issues, all_pull_requests, all_issue_links])
 
-        if not os.path.isfile(issue_file_path):
-            self.store_issues(all_issues, issue_file_path)
+        self.store_issues(all_issues, issue_file_path)
 
-            # we are not saving the pull requests in a csv for now.
+        # we are not saving the pull requests in a csv for now.
         self.store_pull_requests(all_pull_requests)
+
+        self.store_links(all_issue_links, link_file_path)
 
 
     def create_issue_commit_dataset(self):
@@ -328,7 +533,7 @@ class GitRepoCollector:
             os.makedirs(output_dir)
         issue_file_path = os.path.join(output_dir, "issue.csv")
         commit_file_path = os.path.join(output_dir, "commit.csv")
-        link_file_path = os.path.join(output_dir, "link.csv")
+        link_file_path = os.path.join(output_dir, "link.json")
 
         # first get all the commits possible using local git.
         if not os.path.isfile(commit_file_path):
@@ -345,9 +550,9 @@ if __name__ == "__main__":
     logger.info("Processing repo: {}".format(repo_path))
 
     config = configparser.ConfigParser()
-    config.read('credentials.cfg')
+    config.read('../credentials.cfg')
     git_token = config['GIT']['TOKEN']
 
-    output_dir = './data/git_data'
+    output_dir = '../data/git_data'
     rpc = GitRepoCollector(git_token, download_dir, output_dir, repo_path)
     rpc.create_issue_commit_dataset()
