@@ -14,6 +14,7 @@ from tqdm import tqdm
 import json
 import requests
 from collections import deque
+import utils
 
 logger = logging.getLogger(__name__)
 
@@ -126,36 +127,7 @@ class Links:
     def get_all_links(self):
         return self.link_map
 
-class DisjointSetUnion:
-    def __init__(self):
-        self.parent = {}
-        self.rank = {}
-
-    def find(self, x):
-        if self.parent[x] != x:
-            self.parent[x] = self.find(self.parent[x])  # Path compression
-        return self.parent[x]
-
-    def union(self, x, y):
-        rootX = self.find(x)
-        rootY = self.find(y)
-
-        if rootX != rootY:
-            if self.rank[rootX] > self.rank[rootY]:
-                self.parent[rootY] = rootX
-            elif self.rank[rootX] < self.rank[rootY]:
-                self.parent[rootX] = rootY
-            else:
-                self.parent[rootY] = rootX
-                self.rank[rootX] += 1
-
-    def add(self, x):
-        if x not in self.parent:
-            self.parent[x] = x
-            self.rank[x] = 0
-
 class GitRepoCollector:
-
     def __init__(self, token, download_path, output_dir, repo_path):
         self.token = token
         self.download_path = download_path
@@ -202,106 +174,6 @@ class GitRepoCollector:
             commit_df = commit_df.append(commit.to_dict(), ignore_index=True)
         commit_df.to_csv(commit_file_path)
 
-    def save_cache(self, file_name, data):
-        if not os.path.exists(self.cache_dir):
-            os.makedirs(self.cache_dir)
-        
-        with open(os.path.join(self.cache_dir, file_name), 'w') as f:
-            json.dump(data, f)
-
-    def load_cache(self, file_name):
-        try:
-            with open(os.path.join(self.cache_dir, file_name), 'r') as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return None
-
-    def make_github_graphql_request(self, token, variables):
-        """
-        Makes a GraphQL request to GitHub API.
-
-        Args:
-        - token: GitHub personal access token
-        - query: GraphQL query string
-        - variables: Variables for the GraphQL query
-
-        Returns:
-        - JSON response from GitHub API
-        """
-        from github_graphql_query import GITHUB_GRAPHQL_QUERY, GITHUB_GRAPHQL_URL
-
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
-
-        try:
-            response = requests.post(
-                GITHUB_GRAPHQL_URL,
-                headers=headers,
-                json={"query": GITHUB_GRAPHQL_QUERY, "variables": variables}
-            )
-            if response.status_code == 200:
-                return response.json()
-
-        except requests.exceptions.RequestException as e:
-            print(f"Error making GraphQL request: {e}")
-            return None
-
-    def run_graphql_query(self):
-
-        owner, name = self.repo_path.split('/')
-
-        variables = {
-            "issuesTimelineCursor": None,
-            "issuesCursor": None,
-            "pullRequestsCursor": None,
-            "owner": owner,
-            "name": name
-        }
-
-        all_issues = []
-        all_pull_requests = []
-        all_issue_links = []
-
-        # Make the GraphQL request using the imported function
-        while True:
-            hasNextPage = False
-            response_data = self.make_github_graphql_request(self.token, variables)
-            
-            if response_data:
-                try:
-
-                    basic_issues = response_data["data"]["repository"]["basicIssues"]
-                    pull_requests = response_data["data"]["repository"]["pullRequests"]
-                    issues_with_timeline = response_data["data"]["repository"]["issuesWithTimeline"]
-
-                    # Append issues and pull requests data
-                    all_issues.extend(basic_issues["edges"])
-                    all_pull_requests.extend(pull_requests["edges"])
-                    all_issue_links.extend(issues_with_timeline["edges"])
-
-                    # Check for pagination
-                    if basic_issues["pageInfo"]["hasNextPage"]:
-                        variables["issuesCursor"] = basic_issues["pageInfo"]["endCursor"]
-                        hasNextPage = True
-                    if pull_requests["pageInfo"]["hasNextPage"]:
-                        variables["pullRequestsCursor"] = pull_requests["pageInfo"]["endCursor"]
-                        hasNextPage = True
-                    if issues_with_timeline["pageInfo"]["hasNextPage"]:
-                        variables["issuesTimelineCursor"] = issues_with_timeline["pageInfo"]["endCursor"]
-                        hasNextPage = True
-                    
-                    if not hasNextPage:
-                        break
-                except:
-                    print('Error occured while executing query')
-                    break
-            else:
-                print("GraphQL request failed, stopping further processing.")
-                break
-        return all_issues, all_pull_requests, all_issue_links
-    
     def store_pull_requests(self, all_pull_requests):
         for pr_edge in all_pull_requests:
             pr_node = pr_edge["node"]
@@ -354,57 +226,7 @@ class GitRepoCollector:
             issue_df = issue_df.append(issue, ignore_index=True)
             issue_df.to_csv(issue_file_path)
     
-    def merge_sets(self, sets):
-        dsu = DisjointSetUnion()
-
-        # Add all elements to DSU
-        for s in sets:
-            for element in s:
-                dsu.add(element)
-
-        # Union elements within the same set
-        for s in sets:
-            elements = list(s)
-            for i in range(1, len(elements)):
-                dsu.union(elements[0], elements[i])
-
-        # Collect all unique sets
-        groups = {}
-        for element in dsu.parent:
-            root = dsu.find(element)
-            if root not in groups:
-                groups[root] = set()
-            groups[root].add(element)
-
-        return list(groups.values())
-
-    def comment_exist(self, issue_id, referenced_id, typename):
-        if typename == 'Issue':
-            item = self.issues_collection.get_issue_by_id(referenced_id)
-            content = item["issue_desc"] + " " + item["issue_comments"]
-        else:
-            item = self.pr_collection.get_pr_by_id(referenced_id)
-            content = item["body"] + " " + item["pr_comments"]
-        
-        pattern = rf"(?<!\w)#{issue_id}(?!\d)"
-        match = re.search(pattern, content)
-
-        return True if match else False
-
-    def chain_related_issues(self, chained_issue_sets):
-        chained_issue_sets = self.merge_sets(chained_issue_sets)
-
-        for chain in chained_issue_sets: 
-            common_set = set()          
-            for current_issue in chain:
-                linked_commits = self.link_collection.get_link_by_id(current_issue)
-                common_set.update(linked_commits)
-            for current_issue in chain:
-                if len(common_set):
-                    self.link_collection.add_links(current_issue, common_set)
-    
     def store_links(self, all_issue_links, link_file_path):
-        file_path = '../unused/data.json'
         chained_issue_sets = []
         
         for edge in all_issue_links:
@@ -468,7 +290,12 @@ class GitRepoCollector:
                 elif link_type == "CrossReferencedEvent":
                     source = link_node["source"]
                     typename = source["__typename"]
-                    if not self.comment_exist(current_issue_id, source["number"], typename):
+                    if not utils.comment_exist(
+                        current_issue_id, 
+                        source["number"], 
+                        typename, 
+                        self.issues_collection if typename=='Issue' else self.pr_collection
+                    ):
                         continue
                     if typename == "PullRequest":
                         if source["isCrossRepository"]:
@@ -487,12 +314,9 @@ class GitRepoCollector:
             if len(commits_for_issue):
                 self.link_collection.add_links(current_issue_id, commits_for_issue)
         
-        self.chain_related_issues(chained_issue_sets)
+        utils.chain_related_issues(chained_issue_sets, self.link_collection)
 
-        # this is just for checking the output.
-        # TODO: delete later
-        json_serializable_data = {key: list(value) for key, value in self.link_collection.get_all_links().items()}
-        
+        json_serializable_data = {key: list(value) for key, value in self.link_collection.get_all_links().items()}        
         with open(link_file_path, 'w') as json_file:
             json.dump(json_serializable_data, json_file, indent=2)
 
@@ -506,26 +330,22 @@ class GitRepoCollector:
                     link_file_path - path to store the links
                     cache_duration - duration for which the cache is valid (in seconds)
         """
+        from github_graphql_query import run_graphql_query
 
         cache_file = 'graphql_query_response.json'
-        cache_data = self.load_cache(cache_file)
+        cache_data = utils.load_cache(self.cache_dir, cache_file)
 
         # If cache is valid, use cached data
         if cache_data and time.time() - os.path.getmtime(os.path.join(self.cache_dir, cache_file)) < cache_duration:
-            print('from cache')
             all_issues, all_pull_requests, all_issue_links = cache_data
         else:
             # get all the issues, pull requests and issue links using the graphql api
-            all_issues, all_pull_requests, all_issue_links = self.run_graphql_query()
-            self.save_cache(cache_file, [all_issues, all_pull_requests, all_issue_links])
+            all_issues, all_pull_requests, all_issue_links = run_graphql_query(self.repo_path, self.token)
+            utils.save_cache([all_issues, all_pull_requests, all_issue_links], cache_file, self.cache_dir)
 
         self.store_issues(all_issues, issue_file_path)
-
-        # we are not saving the pull requests in a csv for now.
         self.store_pull_requests(all_pull_requests)
-
         self.store_links(all_issue_links, link_file_path)
-
 
     def create_issue_commit_dataset(self):
         output_dir = os.path.join(self.output_dir, self.repo_path)
