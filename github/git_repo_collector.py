@@ -165,11 +165,11 @@ class GitRepoCollector:
         repo_url = "https://github.com/{}.git".format(self.repo_path)
         clone_path = os.path.join(self.download_path, self.repo_path)
         if not os.path.exists(clone_path):
-            logger.info("Clone {}...".format(self.repo_path))
+            print("Clone {}...".format(self.repo_path))
             local_git.Repo.clone_from(repo_url, clone_path)
-            logger.info("finished cloning project")
+            print("finished cloning project")
         else:
-            logger.info("Skip clone project as it already exist...")
+            print("Skip clone project as it already exist...")
         local_repo = local_git.Repo(clone_path)
         return local_repo
 
@@ -187,9 +187,9 @@ class GitRepoCollector:
         EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
         local_repo = self.clone_project()
         if os.path.isfile(commit_file_path):
-            logger.info("commits already existing, skip creating...")
+            print("commits already existing, skip creating...")
             return
-        logger.info("creating commit.csv...")
+        print("creating commit.csv...")
         commit_df = pd.DataFrame(columns=["commit_id", "summary", "diff", "files", "commit_time"])
         for i, commit in tqdm(enumerate(local_repo.iter_commits())):
             id = commit.hexsha
@@ -408,16 +408,25 @@ class GitRepoCollector:
         cache_data = utils.load_cache(self.cache_dir, cache_file)
 
         # If cache is valid, use cached data
-        if cache_data and time.time() - os.path.getmtime(os.path.join(self.cache_dir, cache_file)) < cache_duration:
-            all_issues, all_pull_requests, all_issue_links = cache_data
-        else:
-            # get all the issues, pull requests and issue links using the graphql api
-            all_issues, all_pull_requests, all_issue_links = run_graphql_query(self.repo_path, self.token)
-            utils.save_cache([all_issues, all_pull_requests, all_issue_links], cache_file, self.cache_dir)
+        try:
+            if cache_data and time.time() - os.path.getmtime(os.path.join(self.cache_dir, cache_file)) < cache_duration:
+                print('Cache file exist in cache directory. Fetching query response from cache')
+                all_issues, all_pull_requests, all_issue_links = cache_data
+            else:
+                # get all the issues, pull requests and issue links using the graphql api
+                all_issues, all_pull_requests, all_issue_links = run_graphql_query(self.repo_path, self.token)
+                utils.save_cache([all_issues, all_pull_requests, all_issue_links], cache_file, self.cache_dir)
 
-        self.store_issues(all_issues, issue_file_path)
-        self.store_pull_requests(all_pull_requests)
-        self.store_links(all_issue_links, link_file_path)
+            self.store_issues(all_issues, issue_file_path)
+            print('Stored issues in '+ issue_file_path )
+
+            self.store_pull_requests(all_pull_requests)
+            print('Stored pull requests data' )
+
+            self.store_links(all_issue_links, link_file_path)
+            print('Stored links in '+ link_file_path )
+        except:
+            print('Error occured')
 
     def create_issue_commit_dataset(self):
         """
@@ -436,9 +445,16 @@ class GitRepoCollector:
         commit_file_path = os.path.join(output_dir, "commit.csv")
         link_file_path = os.path.join(output_dir, "link.json")
 
-        # first get all the commits possible using local git.
+        # Get all the commits possible using local git.        
         if not os.path.isfile(commit_file_path):
-            self.get_commits(commit_file_path)
+            print('Fetching commits...')
+            try:
+                self.get_commits(commit_file_path)
+                print('Commits saved to ' + commit_file_path)
+            except:
+                print('Error occured in fetching commits')
+        else:
+            print('Commits already stored in '+ commit_file_path)
 
         # handle the issues and pull requests
         self.get_issue_links(issue_file_path, link_file_path)
@@ -447,7 +463,6 @@ class GitRepoCollector:
 if __name__ == "__main__":
     download_dir = 'G:/Document/git_projects'
     repo_path = 'risha-parveen/testing'
-    logger.info("Processing repo: {}".format(repo_path))
 
     config = configparser.ConfigParser()
     config.read('../credentials.cfg')
