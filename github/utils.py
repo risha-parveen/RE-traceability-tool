@@ -3,6 +3,11 @@ import json
 import re
 
 class DisjointSetUnion:
+    """
+    A class for disjoint set union data structure.
+
+    This class provides methods for adding elements, finding the representative of a set, and merging two sets.
+    """
     def __init__(self):
         self.parent = {}
         self.rank = {}
@@ -31,8 +36,17 @@ class DisjointSetUnion:
             self.rank[x] = 0
 
 def merge_sets(sets):
+    """
+    Merges a list of sets into disjoint sets.
+
+    Args:
+        sets (list): A list of sets.
+
+    Returns:
+        list: A list of disjoint sets.
+    """
     dsu = DisjointSetUnion()
-        # Add all elements to DSU
+    # Add all elements to DSU
     for s in sets:
         for element in s:
             dsu.add(element)
@@ -54,6 +68,18 @@ def merge_sets(sets):
     return list(groups.values())
 
 def comment_exist(issue_id, referenced_id, typename, collection):
+    """
+    Checks if a comment exists in an issue or pull request.
+
+    Args:
+        issue_id (int): The ID of the issue.
+        referenced_id (int): The ID of the referenced issue or pull request.
+        typename (str): The type of the referenced item ('Issue' or 'PullRequest').
+        collection (object): The collection of issues or pull requests.
+
+    Returns:
+        bool: True if the comment exists, False otherwise.
+    """
     if typename == 'Issue':
         item = collection.get_issue_by_id(referenced_id)
         content = item["issue_desc"] + " " + item["issue_comments"]
@@ -67,6 +93,16 @@ def comment_exist(issue_id, referenced_id, typename, collection):
     return True if match else False
 
 def chain_related_issues(chained_issue_sets, link_collection):
+    """
+    Chains related issues together.
+
+    Args:
+        chained_issue_sets (list): A list of sets of related issues.
+        link_collection (object): The collection of links.
+
+    Returns:
+        None. The results are stored in the link collection.
+    """
     chained_issue_sets = merge_sets(chained_issue_sets)
 
     for chain in chained_issue_sets: 
@@ -79,6 +115,17 @@ def chain_related_issues(chained_issue_sets, link_collection):
                 link_collection.add_links(current_issue, common_set)
 
 def save_cache(data, file_name, cache_dir):
+    """
+    Saves data to a cache file.
+
+    Args:
+        data (object): The data to be cached.
+        file_name (str): The name of the cache file.
+        cache_dir (str): The directory where the cache file will be stored.
+
+    Returns:
+        None. The data is saved to the cache file.
+    """
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
         
@@ -86,6 +133,16 @@ def save_cache(data, file_name, cache_dir):
         json.dump(data, f)
 
 def load_cache(file_name, cache_dir):
+    """
+    Loads data from a cache file.
+
+    Args:
+        file_name (str): The name of the cache file.
+        cache_dir (str): The directory where the cache file is stored.
+
+    Returns:
+        object: The cached data, or None if the cache file does not exist or cannot be decoded.
+    """
     try:
         with open(os.path.join(cache_dir, file_name), 'r') as f:
             return json.load(f)

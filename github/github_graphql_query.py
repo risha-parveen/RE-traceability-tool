@@ -195,7 +195,16 @@ def make_github_graphql_request(token, variables):
         
 
 def run_graphql_query(repo_path, token):
+        """
+				Executes a GraphQL query to fetch issues, pull requests, and issue links from a GitHub repository.
 
+				Args:
+						repo_path (str): The path to the GitHub repository.
+						token (str): The GitHub token for authentication.
+
+				Returns:
+						tuple: A tuple containing lists of all issues, all pull requests, and all issue links.
+				"""
         owner, name = repo_path.split('/')
 
         variables = {
