@@ -35,9 +35,9 @@ class Commit:
             "files": self.files,
             "commit_time": self.commit_time
         }
-
-    def __str__(self):
-        return str(self.to_dict())
+    
+    def get_commit(self):
+        return self.to_dict()
         
 class Issues:
     def __init__(self):
