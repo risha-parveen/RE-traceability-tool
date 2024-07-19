@@ -8,15 +8,21 @@ import numpy as np
 import argparse
 import os
 import json
+import csv
 
 from git_repo_collector import GitRepoCollector, Commit, Issues
+import nltk
 
-sys.path.append("..")
-sys.path.append("../..")
+nltk.download('punkt')
+from nltk.tokenize import word_tokenize
 
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+def __save_artifacts(art_list, output_file):
+    df = pd.DataFrame(art_list)
+    df.to_csv(output_file, index=True)
 
 def __read_artifacts(file_path, type):
     if type == 'link':
@@ -52,7 +58,44 @@ def clean_artifacts(proj_dir):
     clean_issue_file = os.path.join(proj_dir, "clean_issue.csv")
     clean_commit_file = os.path.join(proj_dir, "clean_commit.csv")
 
-    return None, None
+    clean_issues = dict()
+    clean_commits = dict()
+
+    if not os.path.isfile(clean_issue_file):
+        for iss in tqdm(issue):
+            if pd.isnull(iss["issue_desc"]):
+                iss["issue_desc"] = ""
+            iss["issue_desc"] = re.sub("<!-.*->", "", iss["issue_desc"])
+            iss["issue_desc"] = re.sub("```.*```", "", iss["issue_desc"], flags=re.DOTALL)
+            iss["issue_desc"] = " ".join(word_tokenize(iss["issue_desc"]))
+            iss["issue_comments"] = " ".join(word_tokenize(iss["issue_comments"]))  # use only the first comment (title)
+    
+            clean_issues[iss["issue_id"]] = iss
+    else:
+        tmp_issues = __read_artifacts(clean_issue_file, type="issue")
+        for iss in tmp_issues:
+            clean_issues[iss["issue_id"]] = iss
+
+    if not os.path.isfile(clean_commit_file):
+        for cm in tqdm(commit):
+            diff_sents = eval(cm["diff"])
+            diff_tokens = []
+            for sent in diff_sents:
+                sent = sent.strip("+- ")
+                diff_tokens.extend(word_tokenize(sent))
+            cm["diff"] = " ".join(diff_tokens)
+            cm["summary"] = " ".join(word_tokenize(cm["summary"]))
+            clean_commits[cm["commit_id"]] = cm
+    else:
+        tmp_commit = __read_artifacts(clean_commit_file, type="commit")
+        for cm in tmp_commit:
+            clean_commits[cm["commit_id"]] = cm
+
+    # save clean artifacts
+    __save_artifacts(clean_issues.values(), output_file=clean_issue_file)
+    __save_artifacts(clean_commits.values(), output_file=clean_commit_file)
+
+    logger.info('Cleaned issues and commits are stored')
 
 
 if __name__ == "__main__":
@@ -89,7 +132,4 @@ if __name__ == "__main__":
     clean_issue_file = os.path.join(proj_data_dir, 'clean_issue.csv')
     clean_commits_file = os.path.join(proj_data_dir, 'clean_commit.csv')
 
-    # if not os.path.exists(clean_issue_file) or not os.path.exists(clean_commits_file):
-    #     clean_issues, clean_commits, clean_links = clean_artifacts(proj_data_dir)
-
-    clean_issues, clean_commits = clean_artifacts(proj_data_dir)
+    clean_artifacts(proj_data_dir)
