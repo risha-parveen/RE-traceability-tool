@@ -4,3 +4,5 @@ data
 unused
 __pycache__
 cache
+model_files
+single_model_copy
