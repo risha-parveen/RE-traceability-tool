@@ -1,5 +1,5 @@
 # This is from TraceBERT code
-
+# type: ignore
 import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss
