@@ -13,7 +13,7 @@ import csv
 from git_repo_collector import GitRepoCollector, Commit, Issues
 import nltk
 
-nltk.download('punkt')
+# nltk.download('punkt')
 from nltk.tokenize import word_tokenize
 
 import warnings

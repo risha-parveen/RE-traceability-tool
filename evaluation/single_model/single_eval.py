@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 import time
-import tqdm
+from tqdm import tqdm
 
 import torch
 from transformers import BertConfig
@@ -11,51 +11,56 @@ from transformers import BertConfig
 from torch.utils.data import DataLoader
 
 sys.path.append('..')
-sys.path.append('../../')
+sys.path.append('../../github')
 
 # from metrices import metrics
 # from utils import results_to_df, format_batch_input_for_single_bert
 
 from utils import get_eval_args
 from models import TBertS
-from github.data_process import __read_artifacts
+from data_process import __read_artifacts
 
-def read_OSS_examples(data_dir):
-    commit_file = os.path.join(data_dir, "commit_file")
-    issue_file = os.path.join(data_dir, "issue_file")
-    link_file = os.path.join(data_dir, "link_file")
+def find_link(iss_id, cm_id, links):
+    if str(iss_id) in links:
+        if cm_id in set(links[str(iss_id)]):
+            return 1
+    return 0
+
+def get_chunked_retrival_examples(args):
+    commit_file = os.path.join(args.data_dir, "commit.csv")
+    issue_file = os.path.join(args.data_dir, "issue.csv")
+    link_file = os.path.join(args.data_dir, "link.json")
+    issues = __read_artifacts(issue_file, type="issue")
+    commits = __read_artifacts(commit_file, type="commit")
+    links = __read_artifacts(link_file, type="link")
+
+    issue_id_list = [issue['issue_id'] for issue in issues]
+    commit_id_list = [commit['commit_id'] for commit in commits]
+
     examples = []
-    issues = __read_artifacts(issue_file, "issue")
-    commits = __read_artifacts(commit_file, "commit")
-    links = __read_artifacts(link_file, "link")
-    issue_index = {x.issue_id: x for x in issues}
-    commit_index = {x.commit_id: x for x in commits}
-    for lk in links:
-        iss = issue_index[lk[0]]
-        cm = commit_index[lk[1]]
-        # join the tokenized content
-        iss_text = iss.desc + " " + iss.comments
-        cm_text = cm.summary + " " + cm.diffs
-        example = {
-            "NL": iss_text,
-            "PL": cm_text,
-            "issue_id": iss.issue_id
-        }
-        examples.append(example)
+    for iss_id in issue_id_list:
+        for cm_id in commit_id_list:
+            label = find_link(iss_id, cm_id, links)
+            examples.append((iss_id, cm_id, label))
     return examples
 
-def load_examples(data_dir, model, num_limit):
-    cache_dir = os.path.join(data_dir, "cache")
-    if not os.path.isdir(cache_dir):
-        os.makedirs(cache_dir)
-    logger.info("Creating examples from dataset file at {}".format(data_dir))
-    raw_examples = read_OSS_examples(data_dir)
-    if num_limit:
-        raw_examples = raw_examples[:num_limit]
-    # examples = Examples(raw_examples)
-    # if isinstance(model, TBertT) or isinstance(model, TBertI2) or isinstance(model, TBertI):
-    #     examples.update_features(model, multiprocessing.cpu_count())
-    # return examples
+def format_batch_input(batch, model):
+    iss_ids, cm_ids, labels = batch[0], batch[1], batch[2]
+    for iss_id, cm_id in zip(iss_ids, cm_ids):
+        pass
+
+def test(args, model):
+    # get (issue_id, commit_id, label) array and store in retrival_examples
+    chunked_examples = get_chunked_retrival_examples(args)
+    retrival_dataloader = DataLoader(chunked_examples, batch_size = 8)
+
+    for batch in tqdm(retrival_dataloader, desc="retrival evaluation"):
+        iss_ids = batch[0]
+        cm_ids = batch[1]
+        labels = batch[2]
+        with torch.no_grad():
+            model.eval()
+            inputs = format_batch_input(batch, model)
 
 if __name__ == "__main__":
     args = get_eval_args()
@@ -78,7 +83,6 @@ if __name__ == "__main__":
 
     start_time = time.time()
     test_dir = args.data_dir
-    load_examples(test_dir, model=model, num_limit=args.test_num)
-    # m = test(args, model, test_examples)
+    m = test(args, model)
     exe_time = time.time() - start_time
     # m.write_summary(exe_time)
