@@ -6,6 +6,7 @@ import time
 from tqdm import tqdm
 import pandas as pd
 import json
+import math
 
 import torch
 from transformers import BertConfig
@@ -17,6 +18,8 @@ from torch.utils.data import DataLoader
 
 from utils import get_eval_args
 from models import TBertS
+
+# TODO: find a simpler way of importing files here using relative path
 sys.path.insert(0, '/mnt/c/Users/gpripa/Desktop/RE-traceability-tool/github')
 
 from git_repo_collector import Issues, Commits
@@ -50,17 +53,55 @@ class Test:
                 label = self.find_link(iss_id, cm_id, links)
                 examples.append((iss_id, cm_id, label))
         return examples
+    
+    def get_artifact_text(self, issue, commit):
+        iss_text = issue['issue_desc'] + ' ' + issue['issue_comments']
+        cm_text = commit['summary'] + ' ' + commit['diff']
+
+        return iss_text.strip(), cm_text.strip()
 
     def format_batch_input(self, batch, model):
-        iss_ids, cm_ids, labels = batch[0], batch[1], batch[2]
+        tokenizer = model.tokenizer
+        iss_ids, cm_ids = batch[0].tolist(), batch[1]
+        input_ids = []
+        att_masks = []
+        tk_types = []
         for iss_id, cm_id in zip(iss_ids, cm_ids):
-            pass
+            issue = self.issues.get_issue_by_id(iss_id)
+            commit = self.commits.get_commit_by_id(cm_id)
 
-    def test(self, args, model):
+            iss_text, cm_text = self.get_artifact_text(issue, commit)
+
+            feature = tokenizer.encode_plus(
+                text=iss_text,
+                text_pair=cm_text,
+                pad_to_max_length=True,
+                return_attention_mask=True,
+                return_token_type_ids=True,
+                max_length=512,
+                add_special_tokens=True
+            )
+            input_ids.append(torch.tensor(feature["input_ids"], dtype=torch.long))
+            att_masks.append(torch.tensor(feature["attention_mask"], dtype=torch.long))
+            tk_types.append(torch.tensor(feature["token_type_ids"], dtype=torch.long))
+        input_tensor = torch.stack(input_ids)
+        att_tensor = torch.stack(att_masks)
+        tk_type_tensor = torch.stack(tk_types)
+        features = [input_tensor, att_tensor, tk_type_tensor]
+        features = [t.to(model.device) for t in features]
+        inputs = {
+            'input_ids': features[0],
+            'attention_mask': features[1],
+            'token_type_ids': features[2],
+        }
+        return inputs
+
+    def test(self, args, model, res_file_path):
         # get (issue_id, commit_id, label) array and store in retrival_examples
         chunked_examples = self.get_chunked_retrival_examples(args)
         retrival_dataloader = DataLoader(chunked_examples, batch_size = 8)
 
+        res = []
         for batch in tqdm(retrival_dataloader, desc="retrival evaluation"):
             iss_ids = batch[0]
             cm_ids = batch[1]
@@ -68,6 +109,15 @@ class Test:
             with torch.no_grad():
                 model.eval()
                 inputs = self.format_batch_input(batch, model)
+                sim_score = model.get_sim_score(**inputs)
+                for n, p, prd, lb in zip(iss_ids.tolist(), cm_ids, sim_score, labels.tolist()):
+                    res.append((n, p, prd, lb))
+        df = pd.DataFrame()
+        df['issue_id'] = [x[0] for x in res]
+        df['commit_id'] = [x[1] for x in res]
+        df['prediction'] = [x[2] for x in res]
+        df['label'] = [x[3] for x in res]
+        df.to_csv(res_file_path)
 
 if __name__ == "__main__":
     args = get_eval_args()
@@ -91,6 +141,7 @@ if __name__ == "__main__":
     start_time = time.time()
     test_dir = args.data_dir
     test = Test()
-    m = test.test(args, model)
+    m = test.test(args, model, res_file)
     exe_time = time.time() - start_time
+    print(exe_time)
     # m.write_summary(exe_time)

@@ -29,7 +29,7 @@ def read_OSS_artifacts(file_path, type, artifact = None):
         with open(file_path, 'r') as f:
             return json.load(f)
     else:
-        df = pd.read_csv(file_path)
+        df = pd.read_csv(file_path, keep_default_na=False)
         if type == 'commit':
             for index, row in df.iterrows():
                 artifact.add_commit(commit_id=row['commit_id'], summary=row['summary'], diffs=row['diff'], files=row['files'], commit_time=row['commit_time'])
