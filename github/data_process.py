@@ -10,7 +10,7 @@ import os
 import json
 import csv
 
-from git_repo_collector import GitRepoCollector, Commit, Issues
+from git_repo_collector import GitRepoCollector, Commits, Issues
 import nltk
 
 # nltk.download('punkt')
@@ -24,32 +24,31 @@ def __save_artifacts(art_list, output_file):
     df = pd.DataFrame(art_list)
     df.to_csv(output_file, index=True)
 
-def __read_artifacts(file_path, type):
+def read_OSS_artifacts(file_path, type, artifact = None):
     if type == 'link':
         with open(file_path, 'r') as f:
             return json.load(f)
     else:
         df = pd.read_csv(file_path)
         if type == 'commit':
-            commits = []
             for index, row in df.iterrows():
-                commit = Commit(commit_id=row['commit_id'], summary=row['summary'], diffs=row['diff'], files=row['files'], commit_time=row['commit_time'])
-                commits.append(commit.get_commit())
-            return commits 
+                artifact.add_commit(commit_id=row['commit_id'], summary=row['summary'], diffs=row['diff'], files=row['files'], commit_time=row['commit_time'])
+            return artifact.get_all_commits()
         else:
-            issues = Issues()
             for index, row in df.iterrows():
-                issues.add_issue(number=row['issue_id'], body=row['issue_desc'], comments=row['issue_comments'], createdAt=row['created_at'], updatedAt=row['closed_at'])
-            return issues.get_all_issues()
+                artifact.add_issue(number=row['issue_id'], body=row['issue_desc'], comments=row['issue_comments'], createdAt=row['created_at'], updatedAt=row['closed_at'])
+            return artifact.get_all_issues()
 
 def read_artifacts(proj_data_dir):
+    issues = Issues()
+    commits = Commits()
     commit_file = os.path.join(proj_data_dir, "commit.csv")
     issue_file = os.path.join(proj_data_dir, "issue.csv")
     link_file = os.path.join(proj_data_dir, "link.json")
     
-    issues = __read_artifacts(issue_file, type="issue")
-    commits = __read_artifacts(commit_file, type="commit")
-    links = __read_artifacts(link_file, type="link")
+    issues = read_OSS_artifacts(issue_file, type="issue", artifact=issues)
+    commits = read_OSS_artifacts(commit_file, type="commit", artifact=commits)
+    links = read_OSS_artifacts(link_file, type="link")
 
     return issues, commits, links
 
@@ -72,7 +71,7 @@ def clean_artifacts(proj_dir):
     
             clean_issues[iss["issue_id"]] = iss
     else:
-        tmp_issues = __read_artifacts(clean_issue_file, type="issue")
+        tmp_issues = read_OSS_artifacts(clean_issue_file, type="issue")
         for iss in tmp_issues:
             clean_issues[iss["issue_id"]] = iss
 
@@ -87,7 +86,7 @@ def clean_artifacts(proj_dir):
             cm["summary"] = " ".join(word_tokenize(cm["summary"]))
             clean_commits[cm["commit_id"]] = cm
     else:
-        tmp_commit = __read_artifacts(clean_commit_file, type="commit")
+        tmp_commit = read_OSS_artifacts(clean_commit_file, type="commit")
         for cm in tmp_commit:
             clean_commits[cm["commit_id"]] = cm
 
