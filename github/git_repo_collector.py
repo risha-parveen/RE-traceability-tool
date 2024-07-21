@@ -19,25 +19,26 @@ import utils
 logger = logging.getLogger(__name__)
 
 
-class Commit:
-    def __init__(self, commit_id, summary, diffs, files, commit_time):
-        self.commit_id = commit_id
-        self.summary = summary
-        self.diffs = diffs
-        self.files = files
-        self.commit_time = commit_time
+class Commits:
+    def __init__(self):
+        self.commits_map = {}
 
-    def to_dict(self):
-        return {
-            "commit_id": self.commit_id,
-            "summary": self.summary,
-            "diff": self.diffs,
-            "files": self.files,
-            "commit_time": self.commit_time
+    def add_commit(self, commit_id, summary, diffs, files, commit_time):
+        commit = {
+            "commit_id": commit_id,
+            "summary": summary,
+            "diff": diffs,
+            "files": files,
+            "commit_time": commit_time
         }
+        self.commits_map[commit_id] = commit
+        return commit
     
-    def get_commit(self):
-        return self.to_dict()
+    def get_commit_by_id(self, commit_id):
+        return self.commits_map.get(commit_id)
+    
+    def get_all_commits(self):
+        return list(self.commits_map.values())
         
 class Issues:
     def __init__(self):
@@ -71,9 +72,6 @@ class Issues:
     
     def get_all_issues_map(self):
         return self.issue_map
-
-    def __str__(self):
-        return str(list(self.issue_map.values()))
     
 class PullRequests:
     def __init__(self):
@@ -107,9 +105,6 @@ class PullRequests:
     
     def get_all_pr_map(self):
         return self.pr_map
-
-    def __str__(self):
-        return str(list(self.pr_map.values()))
 
 class Links:
     def __init__(self):
@@ -148,6 +143,7 @@ class GitRepoCollector:
         self.repo_path = repo_path
         self.output_dir = output_dir
         self.cache_dir = os.path.join('../cache/' + repo_path) if not cache_dir else cache_dir
+        self.commits_collection = Commits()
         self.issues_collection = Issues()
         self.pr_collection = PullRequests()
         self.link_collection = Links()
@@ -203,9 +199,9 @@ class GitRepoCollector:
                     if diff_line.startswith("+") or diff_line.startswith("-") and '@' not in diff_line:
                         differs.add(diff_line)
             files = list(commit.stats.files)
-            commit = Commit(id, summary, differs, files, create_time)
-            commit_df = commit_df.append(commit.to_dict(), ignore_index=True)
-        commit_df.to_csv(commit_file_path)
+            commit = self.commits_collection.add_commit(id, summary, differs, files, create_time)
+            commit_df = commit_df.append(commit, ignore_index=True)
+            commit_df.to_csv(commit_file_path)
 
     def store_pull_requests(self, all_pull_requests):
         """
