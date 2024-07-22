@@ -142,7 +142,7 @@ class GitRepoCollector:
         self.download_path = download_path
         self.repo_path = repo_path
         self.output_dir = output_dir
-        self.cache_dir = os.path.join('../cache/' + repo_path) if not cache_dir else cache_dir
+        self.cache_dir = os.path.join('./cache/' + repo_path) if not cache_dir else cache_dir
         self.commits_collection = Commits()
         self.issues_collection = Issues()
         self.pr_collection = PullRequests()

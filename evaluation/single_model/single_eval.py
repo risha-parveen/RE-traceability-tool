@@ -35,6 +35,14 @@ class Test:
             if cm_id in set(links[str(iss_id)]):
                 return 1
         return 0
+    
+    def result_to_df(self, res):
+        df = pd.DataFrame()
+        df['issue_id'] = [x[0] for x in res]
+        df['commit_id'] = [x[1] for x in res]
+        df['prediction'] = [x[2] for x in res]
+        df['label'] = [x[3] for x in res]
+        return df
 
     def get_chunked_retrival_examples(self, args):
         commit_file = os.path.join(args.data_dir, "commit.csv")
@@ -112,36 +120,45 @@ class Test:
                 sim_score = model.get_sim_score(**inputs)
                 for n, p, prd, lb in zip(iss_ids.tolist(), cm_ids, sim_score, labels.tolist()):
                     res.append((n, p, prd, lb))
-        df = pd.DataFrame()
-        df['issue_id'] = [x[0] for x in res]
-        df['commit_id'] = [x[1] for x in res]
-        df['prediction'] = [x[2] for x in res]
-        df['label'] = [x[3] for x in res]
-        df.to_csv(res_file_path)
+        df = self.result_to_df(res)        
+        df.to_csv(res_file_path, index=False)
+        return df
 
 if __name__ == "__main__":
     args = get_eval_args()
-    device = torch.device("cpu")
-    res_file = os.path.join(args.output_dir, "raw_res.csv")
-
     logging.basicConfig(level='INFO')
     logger = logging.getLogger(__name__)
 
-    if not os.path.isdir(args.output_dir):
-        os.makedirs(args.output_dir)
+    device = torch.device("cpu")
+    res_file = os.path.join(args.output_dir, "raw_res.csv")
 
-    model = TBertS(BertConfig(), args.code_bert)
-    if args.model_path and os.path.exists(args.model_path):
-        model_path = os.path.join(args.model_path, 't_bert.pt')
-        model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+    if os.path.isfile(res_file) and not args.overwrite:
+        logger.info('Evaluation result already exists')
+        result_df = pd.read_csv(res_file)
     else:
-        raise Exception("evaluation model not found")
-    logger.info("model loaded")
+        if not os.path.isdir(args.output_dir):
+            os.makedirs(args.output_dir)
+        if not os.path.isdir('./cache'):
+            os.makedirs('./cache')
+            
+        model_cache_file = os.path.join('./cache/', 'single_model_cache.pt')
+        if os.path.isfile(model_cache_file):
+            model = torch.load(model_cache_file)
+        else:
+            model = TBertS(BertConfig(), args.code_bert)
+            torch.save(model, model_cache_file)
 
-    start_time = time.time()
-    test_dir = args.data_dir
-    test = Test()
-    m = test.test(args, model, res_file)
-    exe_time = time.time() - start_time
-    print(exe_time)
-    # m.write_summary(exe_time)
+        if args.model_path and os.path.exists(args.model_path):
+            model_path = os.path.join(args.model_path, 't_bert.pt')
+            model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+        else:
+            raise Exception("evaluation model not found")
+        logger.info("model loaded")
+
+        start_time = time.time()
+        test_dir = args.data_dir
+        test = Test()
+        result_df = test.test(args, model, res_file)
+        exe_time = time.time() - start_time
+        print(exe_time)
+    
