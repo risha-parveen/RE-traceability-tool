@@ -23,13 +23,8 @@ from models import TBertS
 sys.path.insert(0, '/mnt/c/Users/gpripa/Desktop/RE-traceability-tool/github')
 
 from git_repo_collector import Issues, Commits
-from data_process import read_OSS_artifacts
 
 class Test:
-    def __init__(self):
-        self.issues = Issues()
-        self.commits = Commits()
-
     def find_link(self, iss_id, cm_id, links):
         if str(iss_id) in links:
             if cm_id in set(links[str(iss_id)]):
@@ -43,17 +38,35 @@ class Test:
         df['prediction'] = [x[2] for x in res]
         df['label'] = [x[3] for x in res]
         return df
+    
+    def read_artifacts(self, file_path, type):
+        issues = Issues()
+        commits = Commits()
+        if type == 'link':
+            with open(file_path, 'r') as f:
+                return json.load(f)
+        else:
+            df = pd.read_csv(file_path, keep_default_na=False)
+            if type == 'commit':
+                for index, row in df.iterrows():
+                    commits.add_commit(commit_id=row['commit_id'], summary=row['summary'], diffs=row['diff'], files=row['files'], commit_time=row['commit_time'])
+                return commits.get_commit_texts()
+            else:
+                for index, row in df.iterrows():
+                    issues.add_issue(number=row['issue_id'], body=row['issue_desc'], comments=row['issue_comments'], createdAt=row['created_at'], updatedAt=row['closed_at'])
+                return issues.get_issue_texts()
 
     def get_chunked_retrival_examples(self, args):
         commit_file = os.path.join(args.data_dir, "commit.csv")
         issue_file = os.path.join(args.data_dir, "issue.csv")
         link_file = os.path.join(args.data_dir, "link.json")
-        issues = read_OSS_artifacts(issue_file, type="issue", artifact=self.issues)
-        commits = read_OSS_artifacts(commit_file, type="commit", artifact=self.commits)
-        links = read_OSS_artifacts(link_file, type="link")
 
-        issue_id_list = [issue['issue_id'] for issue in issues]
-        commit_id_list = [commit['commit_id'] for commit in commits]
+        self.issues_text_map = self.read_artifacts(issue_file, type="issue")
+        self.commits_text_map = self.read_artifacts(commit_file, type="commit")
+        links = self.read_artifacts(link_file, type="link")
+
+        issue_id_list = self.issues_text_map.keys()
+        commit_id_list = self.commits_text_map.keys()
 
         examples = []
         for iss_id in issue_id_list:
@@ -61,12 +74,6 @@ class Test:
                 label = self.find_link(iss_id, cm_id, links)
                 examples.append((iss_id, cm_id, label))
         return examples
-    
-    def get_artifact_text(self, issue, commit):
-        iss_text = issue['issue_desc'] + ' ' + issue['issue_comments']
-        cm_text = commit['summary'] + ' ' + commit['diff']
-
-        return iss_text.strip(), cm_text.strip()
 
     def format_batch_input(self, batch, model):
         tokenizer = model.tokenizer
@@ -75,10 +82,8 @@ class Test:
         att_masks = []
         tk_types = []
         for iss_id, cm_id in zip(iss_ids, cm_ids):
-            issue = self.issues.get_issue_by_id(iss_id)
-            commit = self.commits.get_commit_by_id(cm_id)
-
-            iss_text, cm_text = self.get_artifact_text(issue, commit)
+            iss_text = self.issues_text_map[iss_id]
+            cm_text = self.commits_text_map[cm_id]
 
             feature = tokenizer.encode_plus(
                 text=iss_text,
@@ -107,7 +112,7 @@ class Test:
     def test(self, args, model, res_file_path):
         # get (issue_id, commit_id, label) array and store in retrival_examples
         chunked_examples = self.get_chunked_retrival_examples(args)
-        retrival_dataloader = DataLoader(chunked_examples, batch_size = 8)
+        retrival_dataloader = DataLoader(chunked_examples, batch_size = args.per_gpu_eval_batch_size)
 
         res = []
         for batch in tqdm(retrival_dataloader, desc="retrival evaluation"):
@@ -140,7 +145,7 @@ if __name__ == "__main__":
             os.makedirs(args.output_dir)
         if not os.path.isdir('./cache'):
             os.makedirs('./cache')
-            
+
         model_cache_file = os.path.join('./cache/', 'single_model_cache.pt')
         if os.path.isfile(model_cache_file):
             model = torch.load(model_cache_file)

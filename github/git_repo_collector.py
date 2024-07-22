@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 class Commits:
     def __init__(self):
         self.commits_map = {}
+        self.commit_text_map = {}
 
     def add_commit(self, commit_id, summary, diffs, files, commit_time):
         commit = {
@@ -32,6 +33,8 @@ class Commits:
             "commit_time": commit_time
         }
         self.commits_map[commit_id] = commit
+        text = summary + ' ' + diffs
+        self.commit_text_map[commit_id] = text.strip()
         return commit
     
     def get_commit_by_id(self, commit_id):
@@ -39,10 +42,14 @@ class Commits:
     
     def get_all_commits(self):
         return list(self.commits_map.values())
+    
+    def get_commit_texts(self):
+        return self.commit_text_map
         
 class Issues:
     def __init__(self):
         self.issue_map = {}
+        self.issue_text_map = {}
 
     def add_issue(self, number, body, createdAt, updatedAt, comments):
         """
@@ -56,6 +63,8 @@ class Issues:
             "created_at": createdAt
         }
         self.issue_map[number] = issue
+        text = body + ' ' + comments
+        self.issue_text_map[number] = text.strip()
         return issue
 
     def get_issue_by_id(self, issue_number):
@@ -72,6 +81,9 @@ class Issues:
     
     def get_all_issues_map(self):
         return self.issue_map
+    
+    def get_issue_texts(self):
+        return self.issue_text_map
     
 class PullRequests:
     def __init__(self):
