@@ -57,8 +57,8 @@ class Test:
                 return issues.get_issue_texts()
 
     def get_chunked_retrival_examples(self, args):
-        commit_file = os.path.join(args.data_dir, "commit.csv")
-        issue_file = os.path.join(args.data_dir, "issue.csv")
+        commit_file = os.path.join(args.data_dir, "clean_commit.csv")
+        issue_file = os.path.join(args.data_dir, "clean_issue.csv")
         link_file = os.path.join(args.data_dir, "link.json")
 
         self.issues_text_map = self.read_artifacts(issue_file, type="issue")
@@ -165,5 +165,5 @@ if __name__ == "__main__":
         test = Test()
         result_df = test.test(args, model, res_file)
         exe_time = time.time() - start_time
-        print(exe_time)
+        logger.info("Execution time: " + exe_time)
     
