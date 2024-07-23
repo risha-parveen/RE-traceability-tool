@@ -1,3 +1,4 @@
+# type: ignore
 import calendar
 import logging
 import os
@@ -22,7 +23,6 @@ logger = logging.getLogger(__name__)
 class Commits:
     def __init__(self):
         self.commits_map = {}
-        self.commit_text_map = {}
 
     def add_commit(self, commit_id, summary, diffs, files, commit_time):
         commit = {
@@ -33,8 +33,6 @@ class Commits:
             "commit_time": commit_time
         }
         self.commits_map[commit_id] = commit
-        text = summary + ' ' + diffs
-        self.commit_text_map[commit_id] = text.strip()
         return commit
     
     def get_commit_by_id(self, commit_id):
@@ -43,13 +41,12 @@ class Commits:
     def get_all_commits(self):
         return list(self.commits_map.values())
     
-    def get_commit_texts(self):
-        return self.commit_text_map
+    def get_all_commits_map(self):
+        return self.commits_map
         
 class Issues:
     def __init__(self):
         self.issue_map = {}
-        self.issue_text_map = {}
 
     def add_issue(self, number, body, createdAt, updatedAt, comments):
         """
@@ -63,8 +60,6 @@ class Issues:
             "created_at": createdAt
         }
         self.issue_map[number] = issue
-        text = body + ' ' + comments
-        self.issue_text_map[number] = text.strip()
         return issue
 
     def get_issue_by_id(self, issue_number):
@@ -81,9 +76,6 @@ class Issues:
     
     def get_all_issues_map(self):
         return self.issue_map
-    
-    def get_issue_texts(self):
-        return self.issue_text_map
     
 class PullRequests:
     def __init__(self):
@@ -149,11 +141,11 @@ class GitRepoCollector:
         cache_dir (str): The directory where the cache data will be stored.
     """
 
-    def __init__(self, token, download_path, output_dir, repo_path, cache_dir = None):
+    def __init__(self, token, download_path, root_data_dir, repo_path, cache_dir = None):
         self.token = token
         self.download_path = download_path
         self.repo_path = repo_path
-        self.output_dir = output_dir
+        self.output_dir = root_data_dir
         self.cache_dir = os.path.join('./cache/' + repo_path) if not cache_dir else cache_dir
         self.commits_collection = Commits()
         self.issues_collection = Issues()
@@ -200,6 +192,7 @@ class GitRepoCollector:
         print("creating commit.csv...")
         commit_df = pd.DataFrame(columns=["commit_id", "summary", "diff", "files", "commit_time"])
         for i, commit in tqdm(enumerate(local_repo.iter_commits())):
+            
             id = commit.hexsha
             summary = commit.summary
             create_time = commit.committed_datetime
@@ -456,11 +449,9 @@ class GitRepoCollector:
         # Get all the commits possible using local git.        
         if not os.path.isfile(commit_file_path):
             print('Fetching commits...')
-            try:
-                self.get_commits(commit_file_path)
-                print('Commits saved to ' + commit_file_path)
-            except:
-                print('Error occured in fetching commits')
+            
+            self.get_commits(commit_file_path)
+            print('Commits saved to ' + commit_file_path)
         else:
             print('Commits already stored in '+ commit_file_path)
 
@@ -470,7 +461,7 @@ class GitRepoCollector:
 
 if __name__ == "__main__":
     download_dir = 'G:/Document/git_projects'
-    repo_path = 'risha-parveen/testing'
+    repo_path = 'risha-parveen/test-project'
 
     config = configparser.ConfigParser()
     config.read('../credentials.cfg')

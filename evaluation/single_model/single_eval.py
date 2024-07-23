@@ -24,8 +24,14 @@ from metrices import Metrices
 sys.path.insert(0, '/mnt/c/Users/gpripa/Desktop/RE-traceability-tool/github')
 
 from git_repo_collector import Issues, Commits
+import data_process
 
 class Test:
+    def __init__(self):
+        self.data_dir = os.path.join(args.root_data_dir, args.repo_path)
+        self.issue_collection = Issues()
+        self.commit_collection = Commits()
+
     def find_link(self, iss_id, cm_id, links):
         if str(iss_id) in links:
             if cm_id in set(links[str(iss_id)]):
@@ -41,33 +47,45 @@ class Test:
         return df
     
     def read_artifacts(self, file_path, type):
-        issues = Issues()
-        commits = Commits()
         if type == 'link':
             with open(file_path, 'r') as f:
                 return json.load(f)
         else:
             df = pd.read_csv(file_path, keep_default_na=False)
             if type == 'commit':
-                for index, row in df.iterrows():
-                    commits.add_commit(commit_id=row['commit_id'], summary=row['summary'], diffs=row['diff'], files=row['files'], commit_time=row['commit_time'])
-                return commits.get_commit_texts()
+                for _ , row in df.iterrows():
+                    self.commit_collection.add_commit(commit_id=row['commit_id'], summary=row['summary'], diffs=row['diff'], files=row['files'], commit_time=row['commit_time'])
+                return self.commit_collection.get_all_commits_map()
             else:
-                for index, row in df.iterrows():
-                    issues.add_issue(number=row['issue_id'], body=row['issue_desc'], comments=row['issue_comments'], createdAt=row['created_at'], updatedAt=row['closed_at'])
-                return issues.get_issue_texts()
+                for _ , row in df.iterrows():
+                    self.issue_collection.add_issue(number=row['issue_id'], body=row['issue_desc'], comments=row['issue_comments'], createdAt=row['created_at'], updatedAt=row['closed_at'])
+                return self.issue_collection.get_all_issues_map()
+    
+    def store_artifact_text(self, issue_id_list, commit_id_list):
+        self.issue_text_map = {}
+        self.commit_text_map = {}
+        for iss_id in issue_id_list:
+            issue = self.issues[iss_id]
+            iss_text = issue['issue_desc'] + ' ' + issue['issue_comments']
+            self.issue_text_map[iss_id] = iss_text.strip()
+        for cm_id in commit_id_list:
+            commit = self.commits[cm_id]
+            cm_text = commit['summary'] + ' ' + commit['diff']
+            self.commit_text_map[cm_id] = cm_text.strip()
 
-    def get_chunked_retrival_examples(self, args):
-        commit_file = os.path.join(args.data_dir, "commit.csv")
-        issue_file = os.path.join(args.data_dir, "issue.csv")
-        link_file = os.path.join(args.data_dir, "link.json")
+    def get_chunked_retrival_examples(self):
+        commit_file = os.path.join(self.data_dir, "commit.csv")
+        issue_file = os.path.join(self.data_dir, "issue.csv")
+        link_file = os.path.join(self.data_dir, "link.json")
 
-        self.issues_text_map = self.read_artifacts(issue_file, type="issue")
-        self.commits_text_map = self.read_artifacts(commit_file, type="commit")
+        self.issues = self.read_artifacts(issue_file, type="issue")
+        self.commits = self.read_artifacts(commit_file, type="commit")
         links = self.read_artifacts(link_file, type="link")
 
-        issue_id_list = self.issues_text_map.keys()
-        commit_id_list = self.commits_text_map.keys()
+        issue_id_list = self.issues.keys()
+        commit_id_list = self.commits.keys()
+
+        self.store_artifact_text(issue_id_list, commit_id_list)
 
         examples = []
         for iss_id in issue_id_list:
@@ -83,8 +101,7 @@ class Test:
         att_masks = []
         tk_types = []
         for iss_id, cm_id in zip(iss_ids, cm_ids):
-            iss_text = self.issues_text_map[iss_id]
-            cm_text = self.commits_text_map[cm_id]
+            iss_text, cm_text = self.issue_text_map[iss_id], self.commit_text_map[cm_id]
 
             feature = tokenizer.encode_plus(
                 text=iss_text,
@@ -112,7 +129,7 @@ class Test:
 
     def test(self, args, model, res_file_path):
         # get (issue_id, commit_id, label) array and store in retrival_examples
-        chunked_examples = self.get_chunked_retrival_examples(args)
+        chunked_examples = self.get_chunked_retrival_examples()
         retrival_dataloader = DataLoader(chunked_examples, batch_size = args.per_gpu_eval_batch_size)
 
         res = []
@@ -139,6 +156,16 @@ if __name__ == "__main__":
     res_file = os.path.join(args.output_dir, "raw_res.csv")
     exe_time = None
 
+    # data_dir = os.path.join(args.root_data_dir, args.repo_path)
+    # data_not_processed = False
+    # if os.path.isdir(data_dir):
+    #     if not os.path.isfile(os.path.join(data_dir, 'issue.csv')):
+    #         data_not_processed = True
+    # else: 
+    #     data_not_processed = True
+    # if data_not_processed:
+    #     data_process.main(args)
+
     if os.path.isfile(res_file) and not args.overwrite:
         logger.info('Evaluation result already exists')
         result_df = pd.read_csv(res_file)
@@ -163,12 +190,12 @@ if __name__ == "__main__":
         logger.info("model loaded")
 
         start_time = time.time()
-        test_dir = args.data_dir
+        test_dir = os.path.join(args.root_data_dir, args.repo_path)
         test = Test()
         result_df = test.test(args, model, res_file)
         exe_time = time.time() - start_time
         logger.info("Execution time: " + str(exe_time))
-        
+
     metrices = Metrices(args, result_df)
     metrices.write_summary(exe_time=exe_time)
     

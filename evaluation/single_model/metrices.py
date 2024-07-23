@@ -10,7 +10,7 @@ class Metrices:
     def __init__(self, args, df):
         self.data_frame = df
         self.output_dir = args.output_dir
-        self.data_dir = args.data_dir
+        self.data_dir = os.path.join(args.root_data_dir, args.repo_path)
         self.iss_ids, self.cm_ids, self.pred, self.label = df['issue_id'], df['commit_id'], df['prediction'], df['label']
         self.group_sort = None
         self.confusion_metrices = {'tp':[], 'fp':[], 'tn':[], 'fn':[]}
@@ -144,9 +144,7 @@ class Metrices:
         
         best_f1, best_f2, details, f1_threshold = self.get_precision_recall_curve("pr_curve.png")
         map = self.MAP_at_K(3)
-        print(map)
         mrr = self.MRR()
-        print(mrr)
         return {
             'pk3': pk3,
             'pk2': pk2,
@@ -161,12 +159,13 @@ class Metrices:
 
     def write_summary(self, exe_time=None):
         summary_path = os.path.join(self.output_dir, "summary.json")
-        res = self.get_all_metrices()
+        result = self.get_all_metrices()
         if exe_time:
-            res['execution_time'] = exe_time
+            result['execution_time'] = exe_time
         with open(summary_path, 'w') as file:
             import json
-            json.dump(res, file, indent=4)
+            json.dump(result, file, indent=4)
+        print(result)
 
 
 if __name__=="__main__":
