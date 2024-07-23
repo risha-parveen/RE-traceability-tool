@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader
 
 from utils import get_eval_args
 from models import TBertS
+from metrices import Metrices
 
 # TODO: find a simpler way of importing files here using relative path
 sys.path.insert(0, '/mnt/c/Users/gpripa/Desktop/RE-traceability-tool/github')
@@ -57,8 +58,8 @@ class Test:
                 return issues.get_issue_texts()
 
     def get_chunked_retrival_examples(self, args):
-        commit_file = os.path.join(args.data_dir, "clean_commit.csv")
-        issue_file = os.path.join(args.data_dir, "clean_issue.csv")
+        commit_file = os.path.join(args.data_dir, "commit.csv")
+        issue_file = os.path.join(args.data_dir, "issue.csv")
         link_file = os.path.join(args.data_dir, "link.json")
 
         self.issues_text_map = self.read_artifacts(issue_file, type="issue")
@@ -136,6 +137,7 @@ if __name__ == "__main__":
 
     device = torch.device("cpu")
     res_file = os.path.join(args.output_dir, "raw_res.csv")
+    exe_time = None
 
     if os.path.isfile(res_file) and not args.overwrite:
         logger.info('Evaluation result already exists')
@@ -165,5 +167,8 @@ if __name__ == "__main__":
         test = Test()
         result_df = test.test(args, model, res_file)
         exe_time = time.time() - start_time
-        logger.info("Execution time: " + exe_time)
+        logger.info("Execution time: " + str(exe_time))
+        
+    metrices = Metrices(args, result_df)
+    metrices.write_summary(exe_time=exe_time)
     

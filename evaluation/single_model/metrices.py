@@ -66,7 +66,7 @@ class Metrices:
                     fp += 1
                     self.confusion_metrices['fp'].append((iss_id, cm_id, pred, label))
         self.sort_df()
-        return {"tp": tp, "fp": fp, "tn": tn, "fn": fn}
+        return {"True Positive": tp, "False Positive": fp, "True Negative": tn, "False Negative": fn}
     
     def get_precision_recall_curve(self, fig_name):
         precision, recall, thresholds = precision_recall_curve(self.label, self.pred)
@@ -151,35 +151,23 @@ class Metrices:
             'pk3': pk3,
             'pk2': pk2,
             'pk1': pk1,
-            'f1': best_f1,
-            'f2': best_f2,
-            'map': map,
-            'mrr': mrr,
-            'details': details,
+            'best_f1': best_f1,
+            'best_f2': best_f2,
+            'MAP': map,
+            'MRR': mrr,
+            'confusion_metrices': details,
             'f1_threshold': f1_threshold
         }
 
-    def write_summary(self, exe_time):
-        summary_path = os.path.join(self.output_dir, "summary.txt")
+    def write_summary(self, exe_time=None):
+        summary_path = os.path.join(self.output_dir, "summary.json")
         res = self.get_all_metrices()
-        pk3, pk2, pk1 = res['pk3'], res['pk2'], res['pk1']
-        best_f1, best_f2, details = res['f1'], res['f2'], res['details']
-        map, mrr = res['map'], res['mrr']
-        summary = "\npk3={}, pk2={},pk1={} best_f1 = {}, bets_f2={}, MAP={}, MRR={}, exe_time={},f1_threshold={}\n".format(
-            pk3,
-            pk2,
-            pk1,
-            best_f1,
-            best_f2,
-            map,
-            mrr,
-            exe_time,
-            res['f1_threshold']
-        )
-        with open(summary_path, 'w') as fout:
-            fout.write(summary)
-            fout.write(str(details))
-        print(summary)
+        if exe_time:
+            res['execution_time'] = exe_time
+        with open(summary_path, 'w') as file:
+            import json
+            json.dump(res, file, indent=4)
+
 
 if __name__=="__main__":
     args = get_eval_args()
@@ -187,5 +175,5 @@ if __name__=="__main__":
     if os.path.isfile(res_file):
         result_df = pd.read_csv(res_file)
         metrices = Metrices(args, df=result_df)
-        metrices.write_summary(1)
+        metrices.write_summary()
 
