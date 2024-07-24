@@ -115,14 +115,21 @@ query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor:
           title
           body
           isCrossRepository
-          mergeCommit { 
-          	oid
-          }
           comments(first: 100) {
             edges {
               node {
                 id
                 bodyText
+              }
+            }
+          }
+          mergeCommit { 
+          	oid
+          }
+          commits(first: 100) {
+            nodes {
+              commit {
+                oid
               }
             }
           }

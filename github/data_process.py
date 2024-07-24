@@ -105,7 +105,7 @@ def main(args):
     logger.setLevel("INFO")
 
     config = configparser.ConfigParser()
-    config.read('credentials.cfg')
+    config.read('../credentials.cfg')
 
     proj_data_dir = os.path.join(args.root_data_dir, args.repo_path)
         

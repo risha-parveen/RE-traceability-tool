@@ -156,16 +156,6 @@ if __name__ == "__main__":
     res_file = os.path.join(args.output_dir, "raw_res.csv")
     exe_time = None
 
-    # data_dir = os.path.join(args.root_data_dir, args.repo_path)
-    # data_not_processed = False
-    # if os.path.isdir(data_dir):
-    #     if not os.path.isfile(os.path.join(data_dir, 'issue.csv')):
-    #         data_not_processed = True
-    # else: 
-    #     data_not_processed = True
-    # if data_not_processed:
-    #     data_process.main(args)
-
     if os.path.isfile(res_file) and not args.overwrite:
         logger.info('Evaluation result already exists')
         result_df = pd.read_csv(res_file)
