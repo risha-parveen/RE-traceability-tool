@@ -74,8 +74,8 @@ class Test:
             self.commit_text_map[cm_id] = cm_text.strip()
 
     def get_chunked_retrival_examples(self):
-        commit_file = os.path.join(self.data_dir, "commit.csv")
-        issue_file = os.path.join(self.data_dir, "issue.csv")
+        commit_file = os.path.join(self.data_dir, "clean_commit.csv")
+        issue_file = os.path.join(self.data_dir, "clean_issue.csv")
         link_file = os.path.join(self.data_dir, "link.json")
 
         self.issues = self.read_artifacts(issue_file, type="issue")
