@@ -105,13 +105,14 @@ def main(args):
     logger.setLevel("INFO")
 
     config = configparser.ConfigParser()
-    config.read('credentials.cfg')
+    config.read('../credentials.cfg')
 
     proj_data_dir = os.path.join(args.root_data_dir, args.repo_path)
         
     if not os.path.exists(os.path.join(proj_data_dir, 'clean_issue.csv')):
         # if the issue_csv is not available
         logger.info("Processing repo: {}".format(args.repo_path))
+        print(config)
         git_token = config['GIT']['TOKEN']
         download_dir = 'G:/Document/git_projects'
         rpc = GitRepoCollector(git_token, download_dir, args.root_data_dir, args.repo_path)

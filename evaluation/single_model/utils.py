@@ -10,7 +10,7 @@ def get_eval_args():
  
     parser.add_argument("--root_data_dir", default="../../data/git_data", type=str, help="The input data dir for evaluation")
     
-    parser.add_argument("--model_path", default="../../model_files/online_single_model", help="The model to evaluate")
+    parser.add_argument("--model_path", default="../../model_files/pgcli-online-single-model", help="The model to evaluate")
    
     parser.add_argument("--no_cuda", action="store_true", help="Whether not to use CUDA when available")
     
