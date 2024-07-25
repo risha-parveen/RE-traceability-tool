@@ -82,9 +82,13 @@ def comment_exist(issue_id, referenced_id, typename, collection):
     """
     if typename == 'Issue':
         item = collection.get_issue_by_id(referenced_id)
+        if not item:
+            return False
         content = item["issue_desc"] + " " + item["issue_comments"]
     else:
         item = collection.get_pr_by_id(referenced_id)
+        if not item:
+            return False
         content = item["body"] + " " + item["pr_comments"]
         
     pattern = rf"(?<!\w)#{issue_id}(?!\d)"
@@ -130,7 +134,7 @@ def save_cache(data, file_name, cache_dir):
         os.makedirs(cache_dir)
         
     with open(os.path.join(cache_dir, file_name), 'w') as f:
-        json.dump(data, f)
+        json.dump(data, f, indent=2)
 
 def load_cache(file_name, cache_dir):
     """

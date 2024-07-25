@@ -226,9 +226,12 @@ class GitRepoCollector:
             if pr_node["mergeCommit"] and pr_node["mergeCommit"]["oid"]:
                 commitsLinked.append(pr_node["mergeCommit"]["oid"])
 
+            for node in pr_node["commits"]["nodes"]:
+                if node["commit"] and node["commit"]["oid"]:
+                    commitsLinked.append(node["commit"]["oid"])
+
             # go through timeline items to see if there is any other commits linked 
             # through referenced event or closed event. Save all the linked commit ids
-
             for timeline_edge in pr_node["timelineItems"]["edges"]:
                 timeline_node = timeline_edge["node"]
                 if timeline_node["__typename"] == "ReferencedEvent":
@@ -321,8 +324,10 @@ class GitRepoCollector:
                         elif closer["__typename"] == "PullRequest":
                             if closer["isCrossRepository"]:
                                 continue
-                            commits_linked = self.pr_collection.get_pr_by_id(closer["number"])["commits_linked"]
-                            commits_for_issue.extend(commits_linked)
+                            pr = self.pr_collection.get_pr_by_id(closer["number"])
+                            if pr:
+                                commits_linked = pr["commits_linked"]
+                                commits_for_issue.extend(commits_linked)
 
                 # Connected event
                 elif link_type == "ConnectedEvent":
@@ -332,8 +337,10 @@ class GitRepoCollector:
                         # checking if the pull request belong to the same repository or not 
                         if subject["isCrossRepository"]:
                             continue
-                        commits_linked = self.pr_collection.get_pr_by_id(subject["number"])["commits_linked"]
-                        commits_for_issue.extend(commits_linked)
+                        pr = self.pr_collection.get_pr_by_id(subject["number"])
+                        if pr:
+                            commits_linked = pr["commits_linked"]
+                            commits_for_issue.extend(commits_linked)
                     elif subject["__typename"] == "Issue":
                         issue2_id = subject["number"]
                         current_chained_issues.extend([current_issue_id, issue2_id])
@@ -346,9 +353,11 @@ class GitRepoCollector:
                     if disconnected_subject["__typename"] == "PullRequest":
                         if disconnected_subject["isCrossRepository"]:
                             continue
-                        commits_linked = self.pr_collection.get_pr_by_id(disconnected_subject["number"])["commits_linked"]
-                        for commit in commits_linked:
-                            commits_for_issue.remove(commit)
+                        pr = self.pr_collection.get_pr_by_id(disconnected_subject["number"])
+                        if pr:
+                            commits_linked = pr["commits_linked"]
+                            for commit in commits_linked:
+                                commits_for_issue.remove(commit)
                     elif disconnected_subject["__typename"] == "Issue":
                         issue2_id = disconnected_subject["number"]
                         chain_disconnected.append(issue2_id)
@@ -369,8 +378,10 @@ class GitRepoCollector:
                     if typename == "PullRequest":
                         if source["isCrossRepository"]:
                             continue
-                        commits_linked = self.pr_collection.get_pr_by_id(source["number"])["commits_linked"]
-                        commits_for_issue.extend(commits_linked)
+                        pr = self.pr_collection.get_pr_by_id(source["number"])
+                        if pr:
+                            commits_linked = pr["commits_linked"]
+                            commits_for_issue.extend(commits_linked)
                     elif typename == "Issue":
                         issue2_id = source["number"]
                         # add the issue to the current_chained_issues set if an issue is linked to an issue
@@ -409,25 +420,23 @@ class GitRepoCollector:
         cache_data = utils.load_cache(self.cache_dir, cache_file)
 
         # If cache is valid, use cached data
-        try:
-            if cache_data and time.time() - os.path.getmtime(os.path.join(self.cache_dir, cache_file)) < cache_duration:
-                print('Cache file exist in cache directory. Fetching query response from cache')
-                all_issues, all_pull_requests, all_issue_links = cache_data
-            else:
-                # get all the issues, pull requests and issue links using the graphql api
-                all_issues, all_pull_requests, all_issue_links = run_graphql_query(self.repo_path, self.token)
-                utils.save_cache([all_issues, all_pull_requests, all_issue_links], cache_file, self.cache_dir)
+        
+        if cache_data and time.time() - os.path.getmtime(os.path.join(self.cache_dir, cache_file)) < cache_duration:
+            print('Cache file exist in cache directory. Fetching query response from cache')
+            all_issues, all_pull_requests, all_issue_links = cache_data
+        else:
+            # get all the issues, pull requests and issue links using the graphql api
+            all_issues, all_pull_requests, all_issue_links = run_graphql_query(self.repo_path, self.token)
+            utils.save_cache([all_issues, all_pull_requests, all_issue_links], cache_file, self.cache_dir)
 
-            self.store_issues(all_issues, issue_file_path)
-            print('Stored issues in '+ issue_file_path )
+        self.store_issues(all_issues, issue_file_path)
+        print('Stored issues in '+ issue_file_path )
 
-            self.store_pull_requests(all_pull_requests)
-            print('Stored pull requests data' )
+        self.store_pull_requests(all_pull_requests)
+        print('Stored pull requests data' )
 
-            self.store_links(all_issue_links, link_file_path)
-            print('Stored links in '+ link_file_path )
-        except:
-            print('Error occured')
+        self.store_links(all_issue_links, link_file_path)
+        print('Stored links in '+ link_file_path )
 
     def create_issue_commit_dataset(self):
         """
