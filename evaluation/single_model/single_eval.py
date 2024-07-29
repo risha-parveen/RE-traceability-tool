@@ -21,7 +21,7 @@ from models import TBertS
 from metrices import Metrices
 
 # TODO: find a simpler way of importing files here using relative path
-sys.path.insert(0, '/mnt/c/Users/gpripa/Desktop/RE-traceability-tool/github')
+sys.path.insert(0, '/home/risha/risha/RE-traceability-tool/github')
 
 from git_repo_collector import Issues, Commits
 import data_process
@@ -152,7 +152,7 @@ if __name__ == "__main__":
     logging.basicConfig(level='INFO')
     logger = logging.getLogger(__name__)
 
-    device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
     res_file = os.path.join(args.output_dir, "raw_res.csv")
     exe_time = None
 
@@ -174,7 +174,7 @@ if __name__ == "__main__":
 
         if args.model_path and os.path.exists(args.model_path):
             model_path = os.path.join(args.model_path, 't_bert.pt')
-            model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+            model.load_state_dict(torch.load(model_path, map_location=torch.device(device)))
         else:
             raise Exception("evaluation model not found")
         logger.info("model loaded")
