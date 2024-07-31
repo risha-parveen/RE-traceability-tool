@@ -151,6 +151,8 @@ class GitRepoCollector:
         self.issues_collection = Issues()
         self.pr_collection = PullRequests()
         self.link_collection = Links()
+        # a seperate collection for chained links
+        self.chained_link_collection = Links()
 
     def clone_project(self):
         """
@@ -284,7 +286,7 @@ class GitRepoCollector:
             issue_df = issue_df.append(issue, ignore_index=True)
             issue_df.to_csv(issue_file_path)
     
-    def store_links(self, all_issue_links, link_file_path):
+    def store_links(self, all_issue_links, link_file_path, chained_file_path):
         """
         Processes each issue link in the all_issue_links list, handles different types of events 
         and adds the processed links to a collection. It then saves the link data to a file at the specified path.
@@ -396,13 +398,20 @@ class GitRepoCollector:
                 # the commits that are gathered for the current issue is linked to it.
                 self.link_collection.add_links(current_issue_id, commits_for_issue)
         
-        utils.chain_related_issues(chained_issue_sets, self.link_collection)
+        utils.chain_related_issues(chained_issue_sets, self.chained_link_collection, self.link_collection)
+        print(chained_issue_sets)
+        print(self.chained_link_collection.get_all_links())
 
         json_serializable_data = {key: list(value) for key, value in self.link_collection.get_all_links().items()}        
         with open(link_file_path, 'w') as json_file:
             json.dump(json_serializable_data, json_file, indent=2)
 
-    def get_issue_links(self, issue_file_path, link_file_path, cache_duration=36000):
+        # store the chained links data in a different file
+        json_serializable_data = {key: list(value) for key, value in self.chained_link_collection.get_all_links().items()}
+        with open(chained_file_path, 'w') as json_file:
+            json.dump(json_serializable_data, json_file, indent=2)
+
+    def get_issue_links(self, issue_file_path, link_file_path, chained_file_path):
         """
         Retrieves issue links from a GitHub repository and stores them in specified files.
 
@@ -421,7 +430,7 @@ class GitRepoCollector:
 
         # If cache is valid, use cached data
         
-        if cache_data and time.time() - os.path.getmtime(os.path.join(self.cache_dir, cache_file)) < cache_duration:
+        if cache_data and time.time() - os.path.getmtime(os.path.join(self.cache_dir, cache_file)) < 36000:
             print('Cache file exist in cache directory. Fetching query response from cache')
             all_issues, all_pull_requests, all_issue_links = cache_data
         else:
@@ -435,7 +444,7 @@ class GitRepoCollector:
         self.store_pull_requests(all_pull_requests)
         print('Stored pull requests data' )
 
-        self.store_links(all_issue_links, link_file_path)
+        self.store_links(all_issue_links, link_file_path, chained_file_path)
         print('Stored links in '+ link_file_path )
 
     def create_issue_commit_dataset(self):
@@ -454,6 +463,7 @@ class GitRepoCollector:
         issue_file_path = os.path.join(output_dir, "issue.csv")
         commit_file_path = os.path.join(output_dir, "commit.csv")
         link_file_path = os.path.join(output_dir, "link.json")
+        chained_file_path = os.path.join(output_dir, "chained_link.json")
 
         # Get all the commits possible using local git.        
         if not os.path.isfile(commit_file_path):
@@ -465,17 +475,17 @@ class GitRepoCollector:
             print('Commits already stored in '+ commit_file_path)
 
         # handle the issues and pull requests
-        self.get_issue_links(issue_file_path, link_file_path)
+        self.get_issue_links(issue_file_path, link_file_path, chained_file_path)
         return output_dir
 
 if __name__ == "__main__":
     download_dir = 'G:/Document/git_projects'
-    repo_path = 'risha-parveen/test-project'
+    repo_path = 'risha-parveen/testing'
 
     config = configparser.ConfigParser()
     config.read('../credentials.cfg')
     git_token = config['GIT']['TOKEN']
 
-    output_dir = '../data/git_data'
+    output_dir = '../data/git_data_original'
     rpc = GitRepoCollector(git_token, download_dir, output_dir, repo_path)
     rpc.create_issue_commit_dataset()

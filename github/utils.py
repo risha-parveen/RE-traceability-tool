@@ -96,7 +96,7 @@ def comment_exist(issue_id, referenced_id, typename, collection):
 
     return True if match else False
 
-def chain_related_issues(chained_issue_sets, link_collection):
+def chain_related_issues(chained_issue_sets, chained_link_collection, link_collection):
     """
     Chains related issues together.
 
@@ -116,7 +116,7 @@ def chain_related_issues(chained_issue_sets, link_collection):
             common_set.update(linked_commits)
         for current_issue in chain:
             if len(common_set):
-                link_collection.add_links(current_issue, common_set)
+                chained_link_collection.add_links(current_issue, common_set)
 
 def save_cache(data, file_name, cache_dir):
     """
