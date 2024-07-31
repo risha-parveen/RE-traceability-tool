@@ -4,7 +4,7 @@ import pandas as pd
 from pandas import DataFrame
 from sklearn.metrics import precision_recall_curve, PrecisionRecallDisplay
 import matplotlib.pyplot as plt
-from utils import get_eval_args
+from args import get_eval_args
 
 class Metrices:
     def __init__(self, args, df):

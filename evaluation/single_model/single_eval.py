@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 # from metrices import metrics
 # from utils import results_to_df, format_batch_input_for_single_bert
 
-from utils import get_eval_args
+from args import get_eval_args
 from models import TBertS
 from metrices import Metrices
 
