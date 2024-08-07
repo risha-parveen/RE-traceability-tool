@@ -193,22 +193,38 @@ class GitRepoCollector:
             return
         print("creating commit.csv...")
         commit_df = pd.DataFrame(columns=["commit_id", "summary", "diff", "files", "commit_time"])
-        for i, commit in tqdm(enumerate(local_repo.iter_commits())):
-            
-            id = commit.hexsha
-            summary = commit.summary
-            create_time = commit.committed_datetime
-            parent = commit.parents[0] if commit.parents else EMPTY_TREE_SHA
-            differs = set()
-            for diff in commit.diff(parent, create_patch=True):
-                diff_lines = str(diff).split("\n")
-                for diff_line in diff_lines:
-                    if diff_line.startswith("+") or diff_line.startswith("-") and '@' not in diff_line:
-                        differs.add(diff_line)
-            files = list(commit.stats.files)
-            commit = self.commits_collection.add_commit(id, summary, differs, files, create_time)
-            commit_df = commit_df.append(commit, ignore_index=True)
-            commit_df.to_csv(commit_file_path)
+        processed_commits = set()
+
+        # Iterate over all branches, including remote branches
+        branches = list(local_repo.branches) + [ref for ref in local_repo.remotes.origin.refs if 'HEAD' not in ref.name]
+        for branch in branches:
+            print(f"Processing branch: {branch.name}")
+            for commit in tqdm(local_repo.iter_commits(branch.name)):
+                if commit.hexsha in processed_commits:
+                    continue
+
+                id = commit.hexsha
+                summary = commit.summary
+                create_time = commit.committed_datetime
+                parent = commit.parents[0] if commit.parents else EMPTY_TREE_SHA
+                differs = set()
+                for diff in commit.diff(parent, create_patch=True):
+                    diff_lines = str(diff).split("\n")
+                    for diff_line in diff_lines:
+                        if (diff_line.startswith("+") or diff_line.startswith("-")) and '@' not in diff_line:
+                            differs.add(diff_line)
+                files = list(commit.stats.files)
+                commit_record = {
+                    "commit_id": id,
+                    "summary": summary,
+                    "diff": list(differs),
+                    "files": files,
+                    "commit_time": create_time
+                }
+                self.commits_collection.add_commit(id, summary, differs, files, create_time)
+                commit_df = commit_df.append(commit_record, ignore_index=True)
+                processed_commits.add(id)
+        commit_df.to_csv(commit_file_path, index=False)
 
     def store_pull_requests(self, all_pull_requests):
         """
@@ -228,9 +244,9 @@ class GitRepoCollector:
             if pr_node["mergeCommit"] and pr_node["mergeCommit"]["oid"]:
                 commitsLinked.append(pr_node["mergeCommit"]["oid"])
 
-            for node in pr_node["commits"]["nodes"]:
-                if node["commit"] and node["commit"]["oid"]:
-                    commitsLinked.append(node["commit"]["oid"])
+            # for node in pr_node["commits"]["nodes"]:
+            #     if node["commit"] and node["commit"]["oid"]:
+            #         commitsLinked.append(node["commit"]["oid"])
 
             # go through timeline items to see if there is any other commits linked 
             # through referenced event or closed event. Save all the linked commit ids
@@ -399,8 +415,6 @@ class GitRepoCollector:
                 self.link_collection.add_links(current_issue_id, commits_for_issue)
         
         utils.chain_related_issues(chained_issue_sets, self.chained_link_collection, self.link_collection)
-        print(chained_issue_sets)
-        print(self.chained_link_collection.get_all_links())
 
         json_serializable_data = {key: list(value) for key, value in self.link_collection.get_all_links().items()}        
         with open(link_file_path, 'w') as json_file:
@@ -486,6 +500,6 @@ if __name__ == "__main__":
     config.read('../credentials.cfg')
     git_token = config['GIT']['TOKEN']
 
-    output_dir = '../data/git_data_original'
+    output_dir = '../data/git_data_without_chains'
     rpc = GitRepoCollector(git_token, download_dir, output_dir, repo_path)
     rpc.create_issue_commit_dataset()
