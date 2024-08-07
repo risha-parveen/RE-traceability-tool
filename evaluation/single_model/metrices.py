@@ -5,6 +5,7 @@ from pandas import DataFrame
 from sklearn.metrics import precision_recall_curve, PrecisionRecallDisplay
 import matplotlib.pyplot as plt
 from args import get_eval_args
+import numpy as np
 
 class Metrices:
     def __init__(self, args, df):
@@ -47,6 +48,7 @@ class Metrices:
 
         tp, fp, tn, fn = 0, 0, 0, 0
         for iss_id, cm_id, pred, label in zip(self.iss_ids, self.cm_ids, self.pred, self.label):
+            pred_value = pred
             if pred > threshold:
                 pred = 1
             else:
@@ -54,19 +56,33 @@ class Metrices:
             if pred == label:
                 if label == 1:
                     tp += 1
-                    self.confusion_metrices['tp'].append((iss_id, cm_id, pred, label))
+                    self.confusion_metrices['tp'].append((iss_id, cm_id, pred_value, label))
                 else:
                     tn += 1
-                    self.confusion_metrices['tn'].append((iss_id, cm_id, pred, label))
+                    self.confusion_metrices['tn'].append((iss_id, cm_id, pred_value, label))
             else:
                 if label == 1:
                     fn += 1
-                    self.confusion_metrices['fn'].append((iss_id, cm_id, pred, label))
+                    self.confusion_metrices['fn'].append((iss_id, cm_id, pred_value, label))
                 else:
                     fp += 1
-                    self.confusion_metrices['fp'].append((iss_id, cm_id, pred, label))
+                    self.confusion_metrices['fp'].append((iss_id, cm_id, pred_value, label))
         self.sort_df()
         return {"True Positive": tp, "False Positive": fp, "True Negative": tn, "False Negative": fn}
+    
+    # def find_optimal_threshold(self):
+    #     thresholds = np.arange(0, 1, 0.001)
+    #     from sklearn.metrics import matthews_corrcoef
+    #     mcc_scores = []
+    #     for threshold in thresholds:
+    #         y_pred = (self.pred >= threshold).astype(int)
+    #         # Check if y_pred has both classes (0 and 1)
+    #         if len(np.unique(y_pred)) < 2:
+    #             mcc_scores.append(-1)  # Assign a bad score if y_pred doesn't have both classes
+    #         else:
+    #             mcc_scores.append(matthews_corrcoef(self.label, y_pred))
+    #     optimal_idx = np.argmax(mcc_scores)
+    #     return thresholds[optimal_idx] if thresholds[optimal_idx] else 0.5
     
     def get_precision_recall_curve(self, fig_name):
         precision, recall, thresholds = precision_recall_curve(self.label, self.pred)
@@ -88,9 +104,11 @@ class Metrices:
             fig_path = os.path.join(self.output_dir, fig_name)
             plt.savefig(fig_path)
             plt.close()
+
+        max_threshold = max_f1 / 2 if max_f1 else 0.5
         detail = self.f1_details(max_threshold)
         return round(max_f1, 3), round(max_f2, 3), detail, max_threshold
-    
+
     def precision_at_K(self, k=1):
         if self.group_sort is None:
             self.group_sort = self.data_frame.groupby(["issue_id"]).apply(
