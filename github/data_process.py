@@ -125,7 +125,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--repo_path", default="risha-parveen/test-project")
+    parser.add_argument("--repo_path", default="risha-parveen/testing")
     parser.add_argument("--root_data_dir", default="../data/git_data_original")
 
     main(parser.parse_args())

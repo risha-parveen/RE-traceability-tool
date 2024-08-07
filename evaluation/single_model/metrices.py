@@ -5,6 +5,7 @@ from pandas import DataFrame
 from sklearn.metrics import precision_recall_curve, PrecisionRecallDisplay
 import matplotlib.pyplot as plt
 from args import get_eval_args
+import numpy as np
 
 class Metrices:
     def __init__(self, args, df):
@@ -68,29 +69,43 @@ class Metrices:
         self.sort_df()
         return {"True Positive": tp, "False Positive": fp, "True Negative": tn, "False Negative": fn}
     
+    # def find_optimal_threshold(self):
+    #     thresholds = np.arange(0, 1, 0.001)
+    #     from sklearn.metrics import matthews_corrcoef
+    #     mcc_scores = []
+    #     for threshold in thresholds:
+    #         y_pred = (self.pred >= threshold).astype(int)
+    #         mcc_scores.append(matthews_corrcoef(self.label, y_pred))
+    #     optimal_idx = np.argmax(mcc_scores)
+    #     return thresholds[optimal_idx]
+    
     def get_precision_recall_curve(self, fig_name):
         precision, recall, thresholds = precision_recall_curve(self.label, self.pred)
+        
         max_f1 = 0
         max_f2 = 0
-        max_threshold = 0
-        for p, r, tr in zip(precision, recall, thresholds):
+        for p, r in zip(precision, recall):
             f1 = self.f1_score(p, r)
             f2 = self.f2_score(p, r)
             if f1 >= max_f1:
                 max_f1 = f1
-                max_threshold = tr
             if f2 >= max_f2:
                 max_f2 = f2
-        viz = PrecisionRecallDisplay(
-            precision=precision, recall=recall)
+        
+        viz = PrecisionRecallDisplay(precision=precision, recall=recall)
         viz.plot()
         if os.path.isdir(self.output_dir):
             fig_path = os.path.join(self.output_dir, fig_name)
             plt.savefig(fig_path)
             plt.close()
-        detail = self.f1_details(max_threshold)
-        return round(max_f1, 3), round(max_f2, 3), detail, max_threshold
-    
+        
+        # Find optimal threshold
+        optimal_threshold = max_f1 / 2
+        
+        detail = self.f1_details(optimal_threshold)
+        
+        return round(max_f1, 3), round(max_f2, 3), detail, optimal_threshold
+
     def precision_at_K(self, k=1):
         if self.group_sort is None:
             self.group_sort = self.data_frame.groupby(["issue_id"]).apply(
