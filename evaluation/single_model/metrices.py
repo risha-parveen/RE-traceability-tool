@@ -48,6 +48,7 @@ class Metrices:
 
         tp, fp, tn, fn = 0, 0, 0, 0
         for iss_id, cm_id, pred, label in zip(self.iss_ids, self.cm_ids, self.pred, self.label):
+            pred_value = pred
             if pred > threshold:
                 pred = 1
             else:
@@ -55,17 +56,17 @@ class Metrices:
             if pred == label:
                 if label == 1:
                     tp += 1
-                    self.confusion_metrices['tp'].append((iss_id, cm_id, pred, label))
+                    self.confusion_metrices['tp'].append((iss_id, cm_id, pred_value, label))
                 else:
                     tn += 1
-                    self.confusion_metrices['tn'].append((iss_id, cm_id, pred, label))
+                    self.confusion_metrices['tn'].append((iss_id, cm_id, pred_value, label))
             else:
                 if label == 1:
                     fn += 1
-                    self.confusion_metrices['fn'].append((iss_id, cm_id, pred, label))
+                    self.confusion_metrices['fn'].append((iss_id, cm_id, pred_value, label))
                 else:
                     fp += 1
-                    self.confusion_metrices['fp'].append((iss_id, cm_id, pred, label))
+                    self.confusion_metrices['fp'].append((iss_id, cm_id, pred_value, label))
         self.sort_df()
         return {"True Positive": tp, "False Positive": fp, "True Negative": tn, "False Negative": fn}
     
@@ -75,36 +76,38 @@ class Metrices:
     #     mcc_scores = []
     #     for threshold in thresholds:
     #         y_pred = (self.pred >= threshold).astype(int)
-    #         mcc_scores.append(matthews_corrcoef(self.label, y_pred))
+    #         # Check if y_pred has both classes (0 and 1)
+    #         if len(np.unique(y_pred)) < 2:
+    #             mcc_scores.append(-1)  # Assign a bad score if y_pred doesn't have both classes
+    #         else:
+    #             mcc_scores.append(matthews_corrcoef(self.label, y_pred))
     #     optimal_idx = np.argmax(mcc_scores)
-    #     return thresholds[optimal_idx]
+    #     return thresholds[optimal_idx] if thresholds[optimal_idx] else 0.5
     
     def get_precision_recall_curve(self, fig_name):
         precision, recall, thresholds = precision_recall_curve(self.label, self.pred)
-        
         max_f1 = 0
         max_f2 = 0
-        for p, r in zip(precision, recall):
+        max_threshold = 0
+        for p, r, tr in zip(precision, recall, thresholds):
             f1 = self.f1_score(p, r)
             f2 = self.f2_score(p, r)
             if f1 >= max_f1:
                 max_f1 = f1
+                max_threshold = tr
             if f2 >= max_f2:
                 max_f2 = f2
-        
-        viz = PrecisionRecallDisplay(precision=precision, recall=recall)
+        viz = PrecisionRecallDisplay(
+            precision=precision, recall=recall)
         viz.plot()
         if os.path.isdir(self.output_dir):
             fig_path = os.path.join(self.output_dir, fig_name)
             plt.savefig(fig_path)
             plt.close()
-        
-        # Find optimal threshold
-        optimal_threshold = max_f1 / 2
-        
-        detail = self.f1_details(optimal_threshold)
-        
-        return round(max_f1, 3), round(max_f2, 3), detail, optimal_threshold
+
+        max_threshold = max_f1 / 2 if max_f1 else 0.5
+        detail = self.f1_details(max_threshold)
+        return round(max_f1, 3), round(max_f2, 3), detail, max_threshold
 
     def precision_at_K(self, k=1):
         if self.group_sort is None:
