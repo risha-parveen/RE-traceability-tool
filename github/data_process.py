@@ -28,35 +28,29 @@ class DataProcess:
         df.to_csv(output_file, index=True)
 
     def read_OSS_artifacts(self, file_path, type, artifact = None):
-        if type == 'link':
-            with open(file_path, 'r') as f:
-                return json.load(f)
+        df = pd.read_csv(file_path, keep_default_na=False)
+        if type == 'commit':
+            for index, row in df.iterrows():
+                artifact.add_commit(commit_id=row['commit_id'], summary=row['summary'], diffs=row['diff'], files=row['files'], commit_time=row['commit_time'])
+            return artifact.get_all_commits()
         else:
-            df = pd.read_csv(file_path, keep_default_na=False)
-            if type == 'commit':
-                for index, row in df.iterrows():
-                    artifact.add_commit(commit_id=row['commit_id'], summary=row['summary'], diffs=row['diff'], files=row['files'], commit_time=row['commit_time'])
-                return artifact.get_all_commits()
-            else:
-                for index, row in df.iterrows():
-                    artifact.add_issue(number=row['issue_id'], body=row['issue_desc'], comments=row['issue_comments'], createdAt=row['created_at'], updatedAt=row['closed_at'])
-                return artifact.get_all_issues()
+            for index, row in df.iterrows():
+                artifact.add_issue(number=row['issue_id'], body=row['issue_desc'], comments=row['issue_comments'], createdAt=row['created_at'], updatedAt=row['closed_at'])
+            return artifact.get_all_issues()
 
     def read_artifacts(self, proj_data_dir):
         issues = Issues()
         commits = Commits()
         commit_file = os.path.join(proj_data_dir, "commit.csv")
         issue_file = os.path.join(proj_data_dir, "issue.csv")
-        link_file = os.path.join(proj_data_dir, "link.json")
         
         issues = self.read_OSS_artifacts(issue_file, type="issue", artifact=issues)
         commits = self.read_OSS_artifacts(commit_file, type="commit", artifact=commits)
-        links = self.read_OSS_artifacts(link_file, type="link")
 
-        return issues, commits, links
+        return issues, commits
 
     def clean_artifacts(self, proj_dir):
-        issue, commit, _ = self.read_artifacts(proj_dir)
+        issue, commit = self.read_artifacts(proj_dir)
         clean_issue_file = os.path.join(proj_dir, "clean_issue.csv")
         clean_commit_file = os.path.join(proj_dir, "clean_commit.csv")
 
@@ -126,7 +120,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo_path", default="risha-parveen/testing")
-    parser.add_argument("--root_data_dir", default="../data/git_data_original")
+    parser.add_argument("--root_data_dir", default="../data/git_data_secondary")
 
     main(parser.parse_args())
     
