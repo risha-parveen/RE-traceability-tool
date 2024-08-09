@@ -6,6 +6,7 @@ from sklearn.metrics import precision_recall_curve, PrecisionRecallDisplay
 import matplotlib.pyplot as plt
 from args import get_eval_args
 import numpy as np
+import json
 
 class Metrices:
     def __init__(self, args, df):
@@ -21,6 +22,19 @@ class Metrices:
 
     def f2_score(self, precision, recall):
         return 5 * precision * recall / (4 * precision + recall) if precision + recall > 0 else 0
+    
+    def analyse_fp(self, fp_df):
+        with open(os.path.join(self.data_dir, 'chained_link.json'), 'r') as f:
+            chained = json.load(f)
+        if not chained:
+            return
+        
+        for index, row in fp_df.iterrows():
+            iss = str(row['issue_id'])
+            if iss in chained:
+                commits = set(chained[iss])
+                if row['commit_id'] in commits:
+                    print(iss, row['commit_id'])
 
     def sort_df(self):
         issue_df = pd.read_csv(os.path.join(self.data_dir, 'clean_issue.csv'))
@@ -36,6 +50,8 @@ class Metrices:
             merged_df = pd.merge(merged_df, commit_df, on='commit_id', how='left')
             final_df = merged_df[['issue_id', 'commit_id', 'prediction', 'label', 'issue_desc', 'issue_comments', 'summary', 'diff']]
             final_df.to_csv(os.path.join(confusion_directory, item + '.csv'), index=False)
+            if item == 'fp':
+                self.analyse_fp(final_df)
 
     def f1_details(self, threshold):
         "Return true positive (tp), fp, tn,fn "
