@@ -180,6 +180,6 @@ if __name__ == "__main__":
         logger.info("Execution time: " + str(exe_time))
 
     sort_positives(result_df)
-    # metrices = Metrices(args, result_df)
-    # metrices.write_summary(exe_time=exe_time)
+    metrices = Metrices(args, result_df)
+    metrices.write_summary(exe_time=exe_time)
     

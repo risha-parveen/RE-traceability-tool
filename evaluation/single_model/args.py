@@ -10,13 +10,13 @@ def get_eval_args():
  
     parser.add_argument("--root_data_dir", default="../../data/git_data_secondary", type=str, help="The input data dir for evaluation")
     
-    parser.add_argument("--model_path", default="../../model_files/pgcli-online-single-model", help="The model to evaluate")
+    parser.add_argument("--model_path", default="../../model_files/flask-online-single-model", help="The model to evaluate")
    
     parser.add_argument("--no_cuda", action="store_true", help="Whether not to use CUDA when available")
     
     parser.add_argument("--per_gpu_eval_batch_size", default=64, type=int, help="Batch size per GPU/CPU for evaluation.")
     
-    parser.add_argument("--output_dir", default="./result_secondary", help="directory to store the results")
+    parser.add_argument("--output_dir", default="./result_flask", help="directory to store the results")
     
     parser.add_argument("--overwrite", default=False, action="store_true", help="overwrite the cached data")
     
