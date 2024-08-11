@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader
 from args import get_eval_args
 from models import TBertS
 from metrices import Metrices
+from analyse_results import sort_positives
 
 # TODO: find a simpler way of importing files here using relative path
 sys.path.insert(0, '/home/risha/risha/RE-traceability-tool/github')
@@ -178,6 +179,7 @@ if __name__ == "__main__":
         exe_time = time.time() - start_time
         logger.info("Execution time: " + str(exe_time))
 
+    sort_positives(result_df)
     # metrices = Metrices(args, result_df)
     # metrices.write_summary(exe_time=exe_time)
     

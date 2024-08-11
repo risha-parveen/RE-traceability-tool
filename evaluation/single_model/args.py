@@ -14,7 +14,7 @@ def get_eval_args():
    
     parser.add_argument("--no_cuda", action="store_true", help="Whether not to use CUDA when available")
     
-    parser.add_argument("--per_gpu_eval_batch_size", default=128, type=int, help="Batch size per GPU/CPU for evaluation.")
+    parser.add_argument("--per_gpu_eval_batch_size", default=64, type=int, help="Batch size per GPU/CPU for evaluation.")
     
     parser.add_argument("--output_dir", default="./result_secondary", help="directory to store the results")
     
