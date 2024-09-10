@@ -245,9 +245,9 @@ class GitRepoCollector:
             if pr_node["mergeCommit"] and pr_node["mergeCommit"]["oid"]:
                 commitsLinked.append(pr_node["mergeCommit"]["oid"])
 
-            # for node in pr_node["commits"]["nodes"]:
-            #     if node["commit"] and node["commit"]["oid"]:
-            #         commitsLinked.append(node["commit"]["oid"])
+            for node in pr_node["commits"]["nodes"]:
+                if node["commit"] and node["commit"]["oid"]:
+                    commitsLinked.append(node["commit"]["oid"])
 
             # go through timeline items to see if there is any other commits linked 
             # through referenced event or closed event. Save all the linked commit ids
@@ -415,6 +415,7 @@ class GitRepoCollector:
                 for disconnected_issue in chain_disconnected:
                     current_chained_issues.remove(disconnected_issue)
                 chained_issue_sets.append(set(current_chained_issues))
+            # print(chained_issue_sets)
 
             if len(commits_for_issue):
                 # the commits that are gathered for the current issue is linked to it.
@@ -505,12 +506,12 @@ class GitRepoCollector:
 
 if __name__ == "__main__":
     download_dir = 'G:/Document/git_projects'
-    repo_path = 'risha-parveen/testing'
+    repo_path = 'tonitaip-2020/postgresql-for-novices1'
 
     config = configparser.ConfigParser()
     config.read('../credentials.cfg')
     git_token = config['GIT']['TOKEN']
 
-    output_dir = '../data/git_data_secondary'
+    output_dir = '../data/git_data_check'
     rpc = GitRepoCollector(git_token, download_dir, output_dir, repo_path)
     rpc.create_issue_commit_dataset()

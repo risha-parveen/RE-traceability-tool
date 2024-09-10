@@ -8,7 +8,7 @@ def get_eval_args():
         
     parser.add_argument("--repo_path", default="risha-parveen/testing", help="OSS repository to be evaluated")
  
-    parser.add_argument("--root_data_dir", default="../../data/git_data_secondary", type=str, help="The input data dir for evaluation")
+    parser.add_argument("--root_data_dir", default="../../data/git_data_tertiary", type=str, help="The input data dir for evaluation")
     
     parser.add_argument("--model_path", default="../../model_files/flask-online-single-model", help="The model to evaluate")
    

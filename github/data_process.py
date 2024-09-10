@@ -120,7 +120,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo_path", default="risha-parveen/testing")
-    parser.add_argument("--root_data_dir", default="../data/git_data_secondary")
+    parser.add_argument("--root_data_dir", default="../data/git_data_tertiary")
 
     main(parser.parse_args())
     
