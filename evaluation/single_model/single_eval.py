@@ -32,34 +32,29 @@ class Test:
         self.issue_collection = Issues()
         self.commit_collection = Commits()
 
-    def find_link(self, iss_id, cm_id, links):
-        if str(iss_id) in links:
-            if cm_id in set(links[str(iss_id)]):
-                return 1
-        return 0
+    # def find_link(self, iss_id, cm_id, links):
+    #     if str(iss_id) in links:
+    #         if cm_id in set(links[str(iss_id)]):
+    #             return 1
+    #     return 0
     
     def result_to_df(self, res):
         df = pd.DataFrame()
         df['issue_id'] = [x[0] for x in res]
         df['commit_id'] = [x[1] for x in res]
         df['prediction'] = [x[2] for x in res]
-        df['label'] = [x[3] for x in res]
         return df
     
     def read_artifacts(self, file_path, type):
-        if type == 'link':
-            with open(file_path, 'r') as f:
-                return json.load(f)
+        df = pd.read_csv(file_path, keep_default_na=False)
+        if type == 'commit':
+            for _ , row in df.iterrows():
+                self.commit_collection.add_commit(commit_id=row['commit_id'], summary=row['summary'], diffs=row['diff'], files=row['files'], commit_time=row['commit_time'])
+            return self.commit_collection.get_all_commits_map()
         else:
-            df = pd.read_csv(file_path, keep_default_na=False)
-            if type == 'commit':
-                for _ , row in df.iterrows():
-                    self.commit_collection.add_commit(commit_id=row['commit_id'], summary=row['summary'], diffs=row['diff'], files=row['files'], commit_time=row['commit_time'])
-                return self.commit_collection.get_all_commits_map()
-            else:
-                for _ , row in df.iterrows():
-                    self.issue_collection.add_issue(number=row['issue_id'], body=row['issue_desc'], comments=row['issue_comments'], createdAt=row['created_at'], updatedAt=row['closed_at'])
-                return self.issue_collection.get_all_issues_map()
+            for _ , row in df.iterrows():
+                self.issue_collection.add_issue(number=row['issue_id'], body=row['issue_desc'], comments=row['issue_comments'], createdAt=row['created_at'], updatedAt=row['closed_at'])
+            return self.issue_collection.get_all_issues_map()
     
     def store_artifact_text(self, issue_id_list, commit_id_list):
         self.issue_text_map = {}
@@ -76,11 +71,9 @@ class Test:
     def get_chunked_retrival_examples(self):
         commit_file = os.path.join(self.data_dir, "clean_commit.csv")
         issue_file = os.path.join(self.data_dir, "clean_issue.csv")
-        link_file = os.path.join(self.data_dir, "link.json")
 
         self.issues = self.read_artifacts(issue_file, type="issue")
         self.commits = self.read_artifacts(commit_file, type="commit")
-        links = self.read_artifacts(link_file, type="link")
 
         issue_id_list = self.issues.keys()
         commit_id_list = self.commits.keys()
@@ -90,8 +83,8 @@ class Test:
         examples = []
         for iss_id in issue_id_list:
             for cm_id in commit_id_list:
-                label = self.find_link(iss_id, cm_id, links)
-                examples.append((iss_id, cm_id, label))
+                # label = self.find_link(iss_id, cm_id, links)
+                examples.append((iss_id, cm_id))
         return examples
 
     def format_batch_input(self, batch, model):
@@ -136,13 +129,12 @@ class Test:
         for batch in tqdm(retrival_dataloader, desc="retrival evaluation"):
             iss_ids = batch[0]
             cm_ids = batch[1]
-            labels = batch[2]
             with torch.no_grad():
                 model.eval()
                 inputs = self.format_batch_input(batch, model)
                 sim_score = model.get_sim_score(**inputs)
-                for n, p, prd, lb in zip(iss_ids.tolist(), cm_ids, sim_score, labels.tolist()):
-                    res.append((n, p, prd, lb))
+                for n, p, prd in zip(iss_ids.tolist(), cm_ids, sim_score):
+                    res.append((n, p, prd))
         df = self.result_to_df(res)        
         df.to_csv(res_file_path, index=False)
         return df

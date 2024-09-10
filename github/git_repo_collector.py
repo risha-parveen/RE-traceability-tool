@@ -150,9 +150,10 @@ class GitRepoCollector:
         self.commits_collection = Commits()
         self.issues_collection = Issues()
         self.pr_collection = PullRequests()
-        self.link_collection = Links()
+        self.t1_link_collection = Links()
+        self.t2_link_collection = Links()
         # a seperate collection for chained links
-        self.chained_link_collection = Links()
+        self.t3_link_collection = Links()
 
     def clone_project(self):
         """
@@ -244,9 +245,9 @@ class GitRepoCollector:
             if pr_node["mergeCommit"] and pr_node["mergeCommit"]["oid"]:
                 commitsLinked.append(pr_node["mergeCommit"]["oid"])
 
-            # for node in pr_node["commits"]["nodes"]:
-            #     if node["commit"] and node["commit"]["oid"]:
-            #         commitsLinked.append(node["commit"]["oid"])
+            for node in pr_node["commits"]["nodes"]:
+                if node["commit"] and node["commit"]["oid"]:
+                    commitsLinked.append(node["commit"]["oid"])
 
             # go through timeline items to see if there is any other commits linked 
             # through referenced event or closed event. Save all the linked commit ids
@@ -302,24 +303,29 @@ class GitRepoCollector:
             issue_df = issue_df.append(issue, ignore_index=True)
             issue_df.to_csv(issue_file_path)
     
-    def store_links(self, all_issue_links, link_file_path, chained_file_path):
+    def store_links(self, all_issue_links):
         """
         Processes each issue link in the all_issue_links list, handles different types of events 
         and adds the processed links to a collection. It then saves the link data to a file at the specified path.
         
         Args:
             all_issue_links (list): A list of issue links, each represented as a dictionary.
-            link_file_path (str): The path to the file where the link data will be stored.
+            t1_file_path (str): The path to the file where the link data will be stored.
 
         Returns:
             None. The results are stored in the specified file.
         """
+        t1_file_path = os.path.join(self.output_dir, self.repo_path, "t1.json")
+        t2_file_path = os.path.join(self.output_dir, self.repo_path, "t2.json")
+        t3_file_path = os.path.join(self.output_dir, self.repo_path, "t3.json")
+
         chained_issue_sets = []
         
         for edge in all_issue_links:
             # Iterating through each issue
             current_issue_id = edge["node"]["number"]
             commits_for_issue = []
+            commits_for_pr = []
             current_chained_issues = []
             chain_disconnected = []
             for link in edge["node"]["timelineItems"]["edges"]:
@@ -345,7 +351,7 @@ class GitRepoCollector:
                             pr = self.pr_collection.get_pr_by_id(closer["number"])
                             if pr:
                                 commits_linked = pr["commits_linked"]
-                                commits_for_issue.extend(commits_linked)
+                                commits_for_pr.extend(commits_linked)
 
                 # Connected event
                 elif link_type == "ConnectedEvent":
@@ -358,7 +364,7 @@ class GitRepoCollector:
                         pr = self.pr_collection.get_pr_by_id(subject["number"])
                         if pr:
                             commits_linked = pr["commits_linked"]
-                            commits_for_issue.extend(commits_linked)
+                            commits_for_pr.extend(commits_linked)
                     elif subject["__typename"] == "Issue":
                         issue2_id = subject["number"]
                         current_chained_issues.extend([current_issue_id, issue2_id])
@@ -375,7 +381,7 @@ class GitRepoCollector:
                         if pr:
                             commits_linked = pr["commits_linked"]
                             for commit in commits_linked:
-                                commits_for_issue.remove(commit)
+                                commits_for_pr.remove(commit)
                     elif disconnected_subject["__typename"] == "Issue":
                         issue2_id = disconnected_subject["number"]
                         chain_disconnected.append(issue2_id)
@@ -399,7 +405,7 @@ class GitRepoCollector:
                         pr = self.pr_collection.get_pr_by_id(source["number"])
                         if pr:
                             commits_linked = pr["commits_linked"]
-                            commits_for_issue.extend(commits_linked)
+                            commits_for_pr.extend(commits_linked)
                     elif typename == "Issue":
                         issue2_id = source["number"]
                         # add the issue to the current_chained_issues set if an issue is linked to an issue
@@ -409,29 +415,37 @@ class GitRepoCollector:
                 for disconnected_issue in chain_disconnected:
                     current_chained_issues.remove(disconnected_issue)
                 chained_issue_sets.append(set(current_chained_issues))
+            # print(chained_issue_sets)
 
             if len(commits_for_issue):
                 # the commits that are gathered for the current issue is linked to it.
-                self.link_collection.add_links(current_issue_id, commits_for_issue)
-        
-        utils.chain_related_issues(chained_issue_sets, self.chained_link_collection, self.link_collection)
+                self.t1_link_collection.add_links(current_issue_id, commits_for_issue)
 
-        json_serializable_data = {key: list(value) for key, value in self.link_collection.get_all_links().items()}        
-        with open(link_file_path, 'w') as json_file:
+            if len(commits_for_pr):
+                self.t2_link_collection.add_links(current_issue_id, commits_for_pr)
+        
+        utils.chain_related_issues(chained_issue_sets, self.t1_link_collection, self.t2_link_collection, self.t3_link_collection)
+
+        json_serializable_data = {key: list(value) for key, value in self.t1_link_collection.get_all_links().items()}        
+        with open(t1_file_path, 'w') as json_file:
+            json.dump(json_serializable_data, json_file, indent=2)
+
+        json_serializable_data = {key: list(value) for key, value in self.t2_link_collection.get_all_links().items()}        
+        with open(t2_file_path, 'w') as json_file:
             json.dump(json_serializable_data, json_file, indent=2)
 
         # store the chained links data in a different file
-        json_serializable_data = {key: list(value) for key, value in self.chained_link_collection.get_all_links().items()}
-        with open(chained_file_path, 'w') as json_file:
+        json_serializable_data = {key: list(value) for key, value in self.t3_link_collection.get_all_links().items()}
+        with open(t3_file_path, 'w') as json_file:
             json.dump(json_serializable_data, json_file, indent=2)
 
-    def get_issue_links(self, issue_file_path, link_file_path, chained_file_path):
+    def get_issue_links(self, issue_file_path):
         """
         Retrieves issue links from a GitHub repository and stores them in specified files.
 
         Args:
             issue_file_path (str): The path to the file where issue data will be stored.
-            link_file_path (str): The path to the file where link data will be stored.
+            t1_file_path (str): The path to the file where link data will be stored.
             cache_duration (int, optional): The duration for which the cache is considered valid. Defaults to 36000 seconds.
 
         Returns:
@@ -458,8 +472,8 @@ class GitRepoCollector:
         self.store_pull_requests(all_pull_requests)
         print('Stored pull requests data' )
 
-        self.store_links(all_issue_links, link_file_path, chained_file_path)
-        print('Stored links in '+ link_file_path )
+        self.store_links(all_issue_links)
+        print('Stored links')
 
     def create_issue_commit_dataset(self):
         """
@@ -476,8 +490,6 @@ class GitRepoCollector:
             os.makedirs(output_dir)
         issue_file_path = os.path.join(output_dir, "issue.csv")
         commit_file_path = os.path.join(output_dir, "commit.csv")
-        link_file_path = os.path.join(output_dir, "link.json")
-        chained_file_path = os.path.join(output_dir, "chained_link.json")
 
         # Get all the commits possible using local git.        
         if not os.path.isfile(commit_file_path):
@@ -489,17 +501,17 @@ class GitRepoCollector:
             print('Commits already stored in '+ commit_file_path)
 
         # handle the issues and pull requests
-        self.get_issue_links(issue_file_path, link_file_path, chained_file_path)
+        self.get_issue_links(issue_file_path)
         return output_dir
 
 if __name__ == "__main__":
     download_dir = 'G:/Document/git_projects'
-    repo_path = 'risha-parveen/testing'
+    repo_path = 'tonitaip-2020/postgresql-for-novices1'
 
     config = configparser.ConfigParser()
     config.read('../credentials.cfg')
     git_token = config['GIT']['TOKEN']
 
-    output_dir = '../data/git_data_without_chains'
+    output_dir = '../data/git_data_check'
     rpc = GitRepoCollector(git_token, download_dir, output_dir, repo_path)
     rpc.create_issue_commit_dataset()

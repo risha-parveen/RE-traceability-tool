@@ -6,21 +6,66 @@ from sklearn.metrics import precision_recall_curve, PrecisionRecallDisplay
 import matplotlib.pyplot as plt
 from args import get_eval_args
 import numpy as np
+import json
+
+args = get_eval_args()
 
 class Metrices:
     def __init__(self, args, df):
-        self.data_frame = df
+        self.data_frame = self.add_labels_and_types(df)
         self.output_dir = args.output_dir
         self.data_dir = os.path.join(args.root_data_dir, args.repo_path)
-        self.iss_ids, self.cm_ids, self.pred, self.label = df['issue_id'], df['commit_id'], df['prediction'], df['label']
+        self.iss_ids, self.cm_ids, self.pred, self.label, self.type = df['issue_id'], df['commit_id'], df['prediction'], df['label'], df['link_type']
         self.group_sort = None
         self.confusion_metrices = {'tp':[], 'fp':[], 'tn':[], 'fn':[]}
+
+    def read_json_file(self, file_name):
+        file_path = os.path.join(args.root_data_dir, args.repo_path, file_name)
+        with open(file_path, 'r') as file:
+            data = json.load(file)
+        return data
+
+    def add_labels_and_types(self, result_df):
+        iss_ids, cm_ids, predictions = result_df['issue_id'], result_df['commit_id'], result_df['prediction']
+
+        t1_link, t2_link, t3_link = self.read_json_file('t1.json'), self.read_json_file('t2.json'), self.read_json_file('t3.json')
+        
+        result_df['link_type'] = 4
+        result_df['label'] = 0
+
+
+        for idx, (iss, cm) in enumerate(zip(iss_ids, cm_ids)):
+            issue = str(iss)
+            if issue in t1_link:
+                commits = set(t1_link[issue])
+                if cm in commits:
+                    result_df.at[idx, 'link_type'] = 1
+                    result_df.at[idx, 'label'] = 1
+                    continue
+            if issue in t2_link:
+                commits = set(t2_link[issue])
+                if cm in commits:
+                    result_df.at[idx, 'link_type'] = 2
+                    continue
+            if issue in t3_link:
+                commits = set(t3_link[issue])
+                if cm in commits:
+                    result_df.at[idx, 'link_type'] = 3
+            
+        threshold = 0.001
+        result_df = result_df.sort_values(by=['link_type', 'prediction'], ascending=[True, False], ignore_index = True)
+        positive_df = result_df[result_df['prediction'] > threshold]
+        negative_df = result_df[result_df['prediction'] <= threshold]
+        positive_df.to_csv(os.path.join(args.output_dir, 'positives.csv'), index=False)
+        negative_df.to_csv(os.path.join(args.output_dir, 'negatives.csv'), index=False)  
+        return result_df
 
     def f1_score(self, precision, recall):
         return 2 * (precision * recall) / (precision + recall) if precision + recall > 0 else 0
 
     def f2_score(self, precision, recall):
         return 5 * precision * recall / (4 * precision + recall) if precision + recall > 0 else 0
+    
 
     def sort_df(self):
         issue_df = pd.read_csv(os.path.join(self.data_dir, 'clean_issue.csv'))
@@ -39,12 +84,6 @@ class Metrices:
 
     def f1_details(self, threshold):
         "Return true positive (tp), fp, tn,fn "
-        
-        # merged_df = pd.merge(result_df, issue_df, on='issue_id', how='left')
-
-        # Merge the resulting DataFrame with commit_df on 'commit_id'
-        # merged_df = pd.merge(merged_df, commit_df, on='commit_id', how='left')
-        # print(merged_df)
 
         tp, fp, tn, fn = 0, 0, 0, 0
         for iss_id, cm_id, pred, label in zip(self.iss_ids, self.cm_ids, self.pred, self.label):
@@ -70,20 +109,6 @@ class Metrices:
         self.sort_df()
         return {"True Positive": tp, "False Positive": fp, "True Negative": tn, "False Negative": fn}
     
-    # def find_optimal_threshold(self):
-    #     thresholds = np.arange(0, 1, 0.001)
-    #     from sklearn.metrics import matthews_corrcoef
-    #     mcc_scores = []
-    #     for threshold in thresholds:
-    #         y_pred = (self.pred >= threshold).astype(int)
-    #         # Check if y_pred has both classes (0 and 1)
-    #         if len(np.unique(y_pred)) < 2:
-    #             mcc_scores.append(-1)  # Assign a bad score if y_pred doesn't have both classes
-    #         else:
-    #             mcc_scores.append(matthews_corrcoef(self.label, y_pred))
-    #     optimal_idx = np.argmax(mcc_scores)
-    #     return thresholds[optimal_idx] if thresholds[optimal_idx] else 0.5
-    
     def get_precision_recall_curve(self, fig_name):
         precision, recall, thresholds = precision_recall_curve(self.label, self.pred)
         max_f1 = 0
@@ -104,8 +129,7 @@ class Metrices:
             fig_path = os.path.join(self.output_dir, fig_name)
             plt.savefig(fig_path)
             plt.close()
-
-        max_threshold = max_f1 / 2 if max_f1 else 0.5
+        max_threshold = 0.001
         detail = self.f1_details(max_threshold)
         return round(max_f1, 3), round(max_f2, 3), detail, max_threshold
 
@@ -174,6 +198,7 @@ class Metrices:
             'confusion_metrices': details,
             'f1_threshold': f1_threshold
         }
+    
 
     def write_summary(self, exe_time=None):
         summary_path = os.path.join(self.output_dir, "summary.json")

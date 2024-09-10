@@ -96,7 +96,7 @@ def comment_exist(issue_id, referenced_id, typename, collection):
 
     return True if match else False
 
-def chain_related_issues(chained_issue_sets, chained_link_collection, link_collection):
+def chain_related_issues(chained_issue_sets, t1_link_collection, t2_link_collection, t3_link_collection):
     """
     Chains related issues together.
 
@@ -108,15 +108,20 @@ def chain_related_issues(chained_issue_sets, chained_link_collection, link_colle
         None. The results are stored in the link collection.
     """
     chained_issue_sets = merge_sets(chained_issue_sets)
-
     for chain in chained_issue_sets: 
         common_set = set()          
         for current_issue in chain:
-            linked_commits = link_collection.get_link_by_id(current_issue)
-            common_set.update(linked_commits)
+            common_set.update(t1_link_collection.get_link_by_id(current_issue))
+            common_set.update(t2_link_collection.get_link_by_id(current_issue))
         for current_issue in chain:
+            commit_set = common_set
             if len(common_set):
-                chained_link_collection.add_links(current_issue, common_set)
+                linked_commits1 = t1_link_collection.get_link_by_id(current_issue)
+                linked_commits2 = t2_link_collection.get_link_by_id(current_issue)
+                commit_set = commit_set - linked_commits1 - linked_commits2
+                # commit_set.difference_update(linked_commits1, linked_commits2)
+                if len(commit_set):
+                    t3_link_collection.add_links(current_issue, commit_set)
 
 def save_cache(data, file_name, cache_dir):
     """
