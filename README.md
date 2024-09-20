@@ -33,6 +33,7 @@ python single_eval.py \
   --exp_name 'replication_study'
 ```
 The results can also be downloaded from [evaluation_results.zip](https://doi.org/10.6084/m9.figshare.27073054.v2)
+
 ## Testing on new projects
 If you'd like to test the traceability tool on your own GitHub projects, follow these steps:
 
@@ -61,4 +62,4 @@ python single_eval.py \
   Replace `<your_github_repository_path>` with the path to your repository and `<your_experiment_name>` with a custom name for your experiment. `model_path` should be replaced by the path to which the trained model is stored.
 
 ## Training the model on different architectures
-You can also train T-BERT using other architectures (e.g., Siamese, Twin) by following the training steps provided by the original T-BERT repository: TraceBERT GitHub.
+You can also train T-BERT using other architectures (e.g., Siamese, Twin) by following the training steps provided by the original T-BERT repository:[ TraceBERT GitHub.](https://github.com/jinfenglin/TraceBERT)
