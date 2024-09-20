@@ -1,41 +1,62 @@
 # RE-traceability-tool
 
-This repository contains scripts for recovering traceability links between issues and commits in Github projects. 
+This repository contains scripts for recovering traceability links between issues and commits in GitHub projects using the T-BERT model. The repository provides tools for both replicating the results from our paper and applying the method to new projects of your own.
 
-To get started, clone this repository and install the required dependencies
+## Getting started
 
+Clone the repository and install the required dependencies
 ```
 git clone https://github.com/risha-parveen/RE-traceability-tool.git
 
+cd RE-traceability-tool
+
 pip install -r requirement.txt
 ```
-Training:
 
-The fully trained Single-architecture T-BERT model can be downloaded from [https://drive.google.com/file/d/1JUT9tVYfzSC_ZQb-GaWkz8rq95-YUMBM/view?usp=drive_link](url) and saved to the local.
+## Replicating results for the four analyzed projects
 
-You can also train T-BERT on other architectures like Siamese or Twin architecture by following the training steps presented in [https://github.com/jinfenglin/TraceBERT](url)
+To replicate the results from our study on the four GitHub projects, follow these steps:
 
+1. Download the preprocessed data and trained model used in the study from our Figshare repository:
+    * Preprocessed GitHub data from the four projects: Download here
+    * Fully trained T-BERT model: Download here
+2. Save the downloaded files into appropriate directories within the repository:
+    * Place the preprocessed data in a directory named data/
+    * Store the trained model in models/ directory
+3. Run the evaluation to recover traceability links from the test data of the four projects:
+```
+cd evaluation/single_model
 
-Recovering trace links from Github projects:
+python single_eval.py \
+  --data_dir ../data \
+  --model_dir ../models \
+  --exp_name replication_study
+```
 
-You can download the preprocessed test data of github projects from the following link: [https://drive.google.com/drive/folders/1hFFzJzxsbv7zqYFmRV9Y12h0dUjYFXB_?usp=sharing](url)
+## Testing on new projects
+If you'd like to test the traceability tool on your own GitHub projects, follow these steps:
 
-To collect data from different repositories, run the following command to collect and preprocess the data.
+1. Collect and preprocess the GitHub data from your own repositories:
 
 ```
 cd github
 
 python data_process.py \
-  --repo_path <git_repository_path> \
-  --root_data_dir <test_data_root_directory>
+  --repo_path <your_github_repository_path> \
+  --root_data_dir <your_preprocessed_data_directory>
 ```
+  Replace `<your_github_repository_path>` with the local path to your GitHub repository and `<your_preprocessed_data_directory>` with the path where the preprocessed data should be stored.
 
-To recover links from the git data run the following command:
+2. Run the evaluation to recover traceability links from your data:
 
 ```
 cd evaluation/single_model
 
 python single_eval.py \
-  --repo_path <git_repository_path> \
-  --exp_name <experiment_name>
+  --repo_path <your_github_repository_path> \
+  --exp_name <your_experiment_name>
 ```
+  Replace `<your_github_repository_path>` with the path to your repository and `<your_experiment_name>` with a custom name for your experiment.
+
+## Training the model on different architectures
+You can also train T-BERT using other architectures (e.g., Siamese, Twin) by following the training steps provided by the original T-BERT repository: TraceBERT GitHub.
