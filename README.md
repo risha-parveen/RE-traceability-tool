@@ -63,3 +63,7 @@ python single_eval.py \
 
 ## Training the model on different architectures
 You can also train T-BERT using other architectures (e.g., Siamese, Twin) by following the training steps provided by the original T-BERT repository:[ TraceBERT GitHub.](https://github.com/jinfenglin/TraceBERT)
+
+## Acknowledgments
+
+This repository utilises code and concepts from the [TraceBERT repository.](https://github.com/jinfenglin/TraceBERT). We would like to express our gratitude to the original authors for making their work available and facilitating the development for our study
