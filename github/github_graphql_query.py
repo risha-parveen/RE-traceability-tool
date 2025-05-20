@@ -230,7 +230,6 @@ def run_graphql_query(repo_path, token):
         while True:
             hasNextPage = False
             response_data = make_github_graphql_request(token, variables)
-            
             if response_data:
                 try:
 

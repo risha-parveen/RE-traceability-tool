@@ -5,6 +5,7 @@ from torch import nn
 from torch.nn import CrossEntropyLoss
 from transformers import AutoTokenizer, AutoModel, PreTrainedModel, AutoModelForSequenceClassification
 import torch.nn.functional as F
+from peft import get_peft_model, LoraConfig, TaskType,prepare_model_for_kbit_training
 
 
 class TwinBert(PreTrainedModel):
@@ -226,29 +227,97 @@ class TBertI2(TBertT):
         self.cls = RelationClassifyHeader(config)
 
 
+# class TBertS(PreTrainedModel):
+#     def __init__(self, config, code_bert, device=None):
+#         super().__init__(config)
+#         self.tokenizer = AutoTokenizer.from_pretrained(code_bert)
+#         self.bert = AutoModelForSequenceClassification.from_pretrained(code_bert)
+#         self._device = device if device is not None else torch.device("cpu")
+#         self.to(self._device)
+
+#     def forward(self, input_ids, attention_mask, token_type_ids, relation_label=None):
+#         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids,
+#                             labels=relation_label)
+#         res = dict()
+#         if relation_label is not None:
+#             loss = outputs[0]
+#             res['loss'] = loss
+#             logits = outputs[1]
+#             res['logits'] = logits
+#         else:
+#             logits = outputs[0]
+#             res['logits'] = logits
+#         return res
+
+#     def get_sim_score(self, input_ids, attention_mask, token_type_ids):
+#         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+#         logits = outputs[0]
+#         sim_scores = torch.softmax(logits, 1).data.tolist()
+#         return [x[1] for x in sim_scores]
+
+#     def get_nl_tokenizer(self):
+#         return self.tokenizer
+
+#     def get_pl_tokenizer(self):
+#         return self.tokenizer
+
 class TBertS(PreTrainedModel):
-    def __init__(self, config, code_bert):
+    def __init__(self, config, code_bert, device=None, use_lora=False):
         super().__init__(config)
         self.tokenizer = AutoTokenizer.from_pretrained(code_bert)
+
+        # Load the model normally (no quantization)
         self.bert = AutoModelForSequenceClassification.from_pretrained(code_bert)
+        self._device = device if device is not None else torch.device("cpu")
+        self.to(self._device)
+
+        if use_lora:
+            # quantization_config = BitsAndBytesConfig(
+            #     load_in_4bit=False,
+            #     bnb_4bit_compute_dtype=torch.float16,
+            #     bnb_4bit_use_double_quant=True,
+            #     bnb_4bit_quant_type="nf4"
+            # )
+            self.bert = AutoModelForSequenceClassification.from_pretrained(
+                code_bert,
+                # quantization_config=quantization_config,
+                # device_map="auto"
+            )
+            self.bert = prepare_model_for_kbit_training(self.bert)
+            lora_config = LoraConfig(
+                r=64,
+                lora_alpha=32,
+                target_modules=["query", "key", "value"],
+                lora_dropout=0.05,
+                bias="none",
+                task_type=TaskType.SEQ_CLS
+            )
+            self.bert = get_peft_model(self.bert, lora_config)
+            self.bert.print_trainable_parameters()
+            print("Q-LORA Training STARTED")
 
     def forward(self, input_ids, attention_mask, token_type_ids, relation_label=None):
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids,
-                            labels=relation_label)
+        outputs = self.bert(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            labels=relation_label
+        )
         res = dict()
         if relation_label is not None:
-            loss = outputs[0]
-            res['loss'] = loss
-            logits = outputs[1]
-            res['logits'] = logits
+            res['loss'] = outputs.loss
+            res['logits'] = outputs.logits
         else:
-            logits = outputs[0]
-            res['logits'] = logits
+            res['logits'] = outputs.logits
         return res
 
     def get_sim_score(self, input_ids, attention_mask, token_type_ids):
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-        logits = outputs[0]
+        outputs = self.bert(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids
+        )
+        logits = outputs.logits
         sim_scores = torch.softmax(logits, 1).data.tolist()
         return [x[1] for x in sim_scores]
 

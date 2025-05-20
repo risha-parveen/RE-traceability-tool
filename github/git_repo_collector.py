@@ -223,7 +223,7 @@ class GitRepoCollector:
                     "commit_time": create_time
                 }
                 self.commits_collection.add_commit(id, summary, differs, files, create_time)
-                commit_df = commit_df.append(commit_record, ignore_index=True)
+                commit_df = pd.concat([commit_df, pd.DataFrame([commit_record])], ignore_index=True)
                 processed_commits.add(id)
         commit_df.to_csv(commit_file_path, index=False)
 
@@ -300,7 +300,7 @@ class GitRepoCollector:
                 updatedAt=issue_node["updatedAt"],
                 comments=comments
             )
-            issue_df = issue_df.append(issue, ignore_index=True)
+            issue_df = pd.concat([issue_df, pd.DataFrame([issue])], ignore_index=True)
             issue_df.to_csv(issue_file_path)
     
     def store_links(self, all_issue_links):

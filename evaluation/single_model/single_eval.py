@@ -21,7 +21,7 @@ from models import TBertS
 from metrices import Metrices
 
 # TODO: find a simpler way of importing files here using relative path
-sys.path.insert(0, '/home/risha/risha/RE-traceability-tool/github')
+sys.path.insert(0, '/Users/rishaparveen/Documents/RE-traceability-tool/github')
 
 from git_repo_collector import Issues, Commits
 import data_process
@@ -112,7 +112,7 @@ class Test:
         att_tensor = torch.stack(att_masks)
         tk_type_tensor = torch.stack(tk_types)
         features = [input_tensor, att_tensor, tk_type_tensor]
-        features = [t.to(model.device) for t in features]
+        features = [t.to(model._device) for t in features]
         inputs = {
             'input_ids': features[0],
             'attention_mask': features[1],
@@ -154,18 +154,20 @@ if __name__ == "__main__":
     else:
         if not os.path.isdir(args.output_dir):
             os.makedirs(args.output_dir)
-        if not os.path.isdir('./cache'):
-            os.makedirs('./cache')
+        # if not os.path.isdir('./cache'):
+        #     os.makedirs('./cache')
 
-        model_cache_file = os.path.join('./cache/', 'single_model_cache.pt')
-        if os.path.isfile(model_cache_file):
-            model = torch.load(model_cache_file)
-        else:
-            model = TBertS(BertConfig(), args.code_bert)
-            torch.save(model, model_cache_file)
+        # model_cache_file = os.path.join('./cache/', 'single_model_cache.pt')
+        # if os.path.isfile(model_cache_file):
+        #     model = TBertS(BertConfig(), args.code_bert, device=device)
+        #     model.load_state_dict(torch.load(model_cache_file, map_location=device))
+        # else:
+        #     model = TBertS(BertConfig(), args.code_bert, device=device)
+        #     torch.save(model.state_dict(), model_cache_file)
 
         if args.model_path and os.path.exists(args.model_path):
             model_path = os.path.join(args.model_path, 't_bert.pt')
+            model = TBertS(BertConfig(), args.code_bert, device=device, use_lora=True)  
             model.load_state_dict(torch.load(model_path, map_location=torch.device(device)))
         else:
             raise Exception("evaluation model not found")

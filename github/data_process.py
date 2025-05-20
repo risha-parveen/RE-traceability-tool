@@ -14,7 +14,7 @@ import csv
 from git_repo_collector import GitRepoCollector, Commits, Issues
 import nltk
 
-# nltk.download('punkt')
+nltk.download('punkt_tab')
 from nltk.tokenize import word_tokenize
 
 import warnings
@@ -119,8 +119,8 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--repo_path", default="risha-parveen/testing")
-    parser.add_argument("--root_data_dir", default="../data/git_data_tertiary")
+    parser.add_argument("--repo_path", default="risha-parveen/test-project")
+    parser.add_argument("--root_data_dir", default="../data/git_data")
 
     main(parser.parse_args())
     

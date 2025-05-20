@@ -52,7 +52,7 @@ class Metrices:
                 if cm in commits:
                     result_df.at[idx, 'link_type'] = 3
             
-        threshold = 0.001
+        threshold = 0.993
         result_df = result_df.sort_values(by=['link_type', 'prediction'], ascending=[True, False], ignore_index = True)
         positive_df = result_df[result_df['prediction'] > threshold]
         negative_df = result_df[result_df['prediction'] <= threshold]
@@ -129,7 +129,7 @@ class Metrices:
             fig_path = os.path.join(self.output_dir, fig_name)
             plt.savefig(fig_path)
             plt.close()
-        max_threshold = 0.001
+        max_threshold = 0.993
         detail = self.f1_details(max_threshold)
         return round(max_f1, 3), round(max_f2, 3), detail, max_threshold
 
@@ -214,6 +214,7 @@ class Metrices:
 if __name__=="__main__":
     args = get_eval_args()
     res_file = os.path.join(args.output_dir, "raw_res.csv")
+    print(res_file)
     if os.path.isfile(res_file):
         result_df = pd.read_csv(res_file)
         metrices = Metrices(args, df=result_df)
