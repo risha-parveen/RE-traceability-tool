@@ -167,8 +167,8 @@ if __name__ == "__main__":
 
         if args.model_path and os.path.exists(args.model_path):
             model_path = os.path.join(args.model_path, 't_bert.pt')
-            model = TBertS(BertConfig(), args.code_bert, device=device, use_lora=True)  
-            model.load_state_dict(torch.load(model_path, map_location=torch.device(device)))
+            model = TBertS(BertConfig(), args.code_bert, device=device, use_lora=False) # use_lora=True if you want to use lora fine-tuned model 
+            model.load_state_dict(torch.load(model_path, map_location=torch.device(device)), strict=False)
         else:
             raise Exception("evaluation model not found")
         logger.info("model loaded")

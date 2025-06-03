@@ -12,6 +12,7 @@ args = get_eval_args()
 
 class Metrices:
     def __init__(self, args, df):
+        self.fixed_threshold = 0.01
         self.data_frame = self.add_labels_and_types(df)
         self.output_dir = args.output_dir
         self.data_dir = os.path.join(args.root_data_dir, args.repo_path)
@@ -51,11 +52,10 @@ class Metrices:
                 commits = set(t3_link[issue])
                 if cm in commits:
                     result_df.at[idx, 'link_type'] = 3
-            
-        threshold = 0.993
+
         result_df = result_df.sort_values(by=['link_type', 'prediction'], ascending=[True, False], ignore_index = True)
-        positive_df = result_df[result_df['prediction'] > threshold]
-        negative_df = result_df[result_df['prediction'] <= threshold]
+        positive_df = result_df[result_df['prediction'] > self.fixed_threshold]
+        negative_df = result_df[result_df['prediction'] <= self.fixed_threshold]
         positive_df.to_csv(os.path.join(args.output_dir, 'positives.csv'), index=False)
         negative_df.to_csv(os.path.join(args.output_dir, 'negatives.csv'), index=False)  
         return result_df
@@ -129,9 +129,9 @@ class Metrices:
             fig_path = os.path.join(self.output_dir, fig_name)
             plt.savefig(fig_path)
             plt.close()
-        max_threshold = 0.993
-        detail = self.f1_details(max_threshold)
-        return round(max_f1, 3), round(max_f2, 3), detail, max_threshold
+        # we are not using the max_threshold calculated above, instead we are using a fixed threshold for evaluation.
+        detail = self.f1_details(self.fixed_threshold)
+        return round(max_f1, 3), round(max_f2, 3), detail, self.fixed_threshold
 
     def precision_at_K(self, k=1):
         if self.group_sort is None:
